@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, Icon, toast } from "@/components/ui";
+import { useJobsPoll } from "@/components/jobsClient";
 
 const GROUPS = [
   ["runeschema", "RuneSchema mods"],
@@ -24,6 +25,7 @@ export default function ModsPanel({ worldId, running }) {
   const [browser, setBrowser] = useState(null);
   const [prerequisites, setPrerequisites] = useState({ ue4ss: "", runeSchema: "" });
   const [runtimePackages, setRuntimePackages] = useState(null);
+  const jobs = useJobsPoll();
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
   const load = useCallback(async () => {
@@ -40,6 +42,14 @@ export default function ModsPanel({ worldId, running }) {
     api(`/api/worlds/${worldId}/runtime`).then((result) => setRuntimePackages(result.packages || null)).catch(() => {});
   }, [load, worldId]);
 
+  const runtimeJobState = jobs.filter((job) => job.type === "runtime" && job.worldId === worldId).map((job) => `${job.id}:${job.status}`).join("|");
+  const runtimeJobSucceeded = jobs.some((job) => job.type === "runtime" && job.worldId === worldId && job.status === "success");
+  useEffect(() => {
+    if (!runtimeJobState || !runtimeJobSucceeded) return;
+    api(`/api/worlds/${worldId}/runtime`).then((result) => setRuntimePackages(result.packages || null)).catch(() => {});
+    load();
+  }, [runtimeJobState, runtimeJobSucceeded, load, worldId]);
+
   const lanes = data?.modLanes || [];
   const lane = lanes.find((item) => item.id === activeLane) || lanes[0];
   const selections = useMemo(() => new Map((data?.modSelections || (data?.modLaneSelections || []).map((key) => ({ key, scope: "both" }))).map((item) => [item.key, item])), [data]);
@@ -54,10 +64,9 @@ export default function ModsPanel({ worldId, running }) {
     setBusy(true);
     try {
       const result = await api(`/api/worlds/${worldId}/runtime`, { method: "POST", body: { component, zipPath } });
-      setRuntimePackages(result.packages || null);
-      const label = component === "ue4ss" ? "UE4SS" : "RuneSchema";
-      toast(`${label} staged for the host and verified client Sync.`, "success");
-      await load();
+      try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
+      const label = RUNTIME_PACKAGES.find((item) => item.component === component)?.label || component;
+      toast(result.alreadyRunning ? `${label} installation is already running.` : `${label} installation queued. Follow it in Downloads.`, "success");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }
   }
@@ -106,6 +115,17 @@ export default function ModsPanel({ worldId, running }) {
       const result = await api(`/api/worlds/${worldId}/mods/sync`, { method: "POST", body: { selections: next } });
       setData((current) => ({ ...current, ...result }));
       toast("Managed mods saved and synchronized.", "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
+
+  async function setPakInstallMode(pakInstallMode) {
+    if (running || data?.pakInstallMode === pakInstallMode) return;
+    setBusy(true);
+    try {
+      const result = await api(`/api/worlds/${worldId}/mods`, { method: "PATCH", body: { pakInstallMode } });
+      setData((current) => ({ ...current, ...result }));
+      toast(pakInstallMode === "runeschema" ? "PAK mods will be installed through RuneSchema folders." : "PAK mods will be installed in Content/Paks/~mods.", "success");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }
   }
@@ -166,6 +186,13 @@ export default function ModsPanel({ worldId, running }) {
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
           Select a discovered mod, then choose where it belongs: Client, Server, or Both. Client files are published in the downloadable manifest; Server files are materialized on the host. Existing selections migrate to Both automatically.
         </p>
+        <div className="panel-inset" style={{ padding: ".8rem", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 220 }}><strong>PAK destination</strong><div className="subtle" style={{ fontSize: ".7rem" }}>Choose classic <code>Content/Paks/~mods</code>, or let RuneSchema load each triplet from <code>RuneSchema/mods/&lt;ModID&gt;/paks</code>.</div></div>
+          <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
+            <button className={`btn ${data.pakInstallMode !== "runeschema" ? "btn-primary" : "btn-subtle"}`} disabled={busy || running} onClick={() => setPakInstallMode("classic")}>Classic ~mods</button>
+            <button className={`btn ${data.pakInstallMode === "runeschema" ? "btn-primary" : "btn-subtle"}`} disabled={busy || running} onClick={() => setPakInstallMode("runeschema")}>RuneSchema</button>
+          </div>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
           {lanes.map((item) => (
             <button key={item.id} className={`panel-inset ${activeLane === item.id ? "lane-active" : ""}`} onClick={() => { setActiveLane(item.id); setBrowser(null); }} style={{ padding: "0.85rem", textAlign: "left", cursor: "pointer", color: "inherit" }}>
@@ -220,6 +247,7 @@ function ModFolder({ mod, selection, busy, onToggle, onScope }) {
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: "0.82rem", fontWeight: 720 }}>{mod.name}</div>
+      {mod.identity && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "3px 0" }}><span className="chip">ID · {mod.identity.modId}</span>{mod.identity.author && <span className="chip">BY {mod.identity.author}</span>}<span className="chip">{mod.identity.runtimeRole.toUpperCase()}</span><span className="chip">HOTLOAD {mod.identity.hotload ? "YES" : "NO"}</span></div>}
       <div className="subtle" style={{ fontSize: "0.67rem", wordBreak: "break-all" }}>{mod.path}</div>
     </div>
     {mod.syncEligible

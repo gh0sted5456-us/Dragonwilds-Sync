@@ -157,6 +157,63 @@ function filesWithExtensions(dir, extensions) {
   return entries.filter((e) => e.isFile() && wanted.has(path.extname(e.name).toLowerCase())).map((e) => path.join(dir, e.name));
 }
 
+function parseModIdentityText(text, source = null) {
+  const fields = {};
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([^:=]+?)\s*[:=]\s*(.*?)\s*$/);
+    if (!match) continue;
+    fields[match[1].replace(/[\s_-]+/g, "").toLowerCase()] = match[2];
+  }
+  const modId = String(fields.modid || "").trim();
+  if (!modId) return null;
+  const role = String(fields.runtimerole || "both").trim().toLowerCase();
+  return {
+    schema: String(fields.schema || "DragonwildsSync.ID.v1").trim(),
+    modId,
+    name: String(fields.name || modId).trim(),
+    author: String(fields.author || "").trim() || null,
+    runtimeRole: ["client", "server", "both"].includes(role) ? role : "both",
+    hotload: /^(?:1|yes|true|on)$/i.test(String(fields.hotload || "").trim()),
+    source,
+  };
+}
+
+function readModIdentity(dir) {
+  let marker = null;
+  try { marker = fs.readdirSync(dir).find((name) => /^id\.txt$/i.test(name)); } catch { return null; }
+  if (!marker) return null;
+  const source = path.join(dir, marker);
+  try { return parseModIdentityText(fs.readFileSync(source, "utf8"), source); } catch { return null; }
+}
+
+function identityMatches(identity, name, onlyEntry = false) {
+  if (!identity) return null;
+  const clean = (value) => String(value || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return onlyEntry || clean(identity.modId) === clean(name) || clean(identity.name) === clean(name) ? identity : null;
+}
+
+function pakGroups(dir) {
+  const locations = [dir];
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) if (entry.isDirectory()) locations.push(path.join(dir, entry.name));
+  } catch {}
+  const groups = [];
+  for (const location of locations) {
+    const byName = new Map();
+    for (const file of filesWithExtensions(location, [".pak", ".utoc", ".ucas", ".sig"])) {
+      const ext = path.extname(file).toLowerCase();
+      const name = path.basename(file, ext);
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(file);
+    }
+    const marker = readModIdentity(location);
+    for (const [name, files] of byName) groups.push({ name, files, path: location, identity: identityMatches(marker, name, byName.size === 1) });
+  }
+  return groups;
+}
+
 // Inventory every established Dragonwilds mod layout beneath a client install.
 // A logical Pak mod is grouped by basename so its .pak/.utoc/.ucas companions are
 // shown as one entry. UE4SS and RuneSchema mods are folder-based.
@@ -168,14 +225,10 @@ function scanGameMods(input) {
 
   for (const folderName of ["~mods", "LogicMods"]) {
     const dir = path.join(project, "Content", "Paks", folderName);
-    const groups = new Map();
-    for (const file of filesWithExtensions(dir, [".pak", ".utoc", ".ucas", ".sig"])) {
-      const ext = path.extname(file).toLowerCase();
-      const name = path.basename(file, ext);
-      if (!groups.has(name)) groups.set(name, []);
-      groups.get(name).push(file);
+    for (const group of pakGroups(dir)) {
+      const rawName = group.name;
+      detected.push({ key: `pak:${folderName.toLowerCase()}:${rawName.toLowerCase()}`, name: group.identity?.name || rawName, folderName: rawName, modId: group.identity?.modId || rawName, identity: group.identity, type: "pak", location: folderName, path: group.path, files: group.files, syncEligible: true });
     }
-    for (const [name, files] of groups) detected.push({ key: `pak:${folderName.toLowerCase()}:${name.toLowerCase()}`, name, type: "pak", location: folderName, path: dir, files, syncEligible: true });
   }
 
   for (const platform of ["Win64", "WinGDK"]) {
@@ -186,13 +239,20 @@ function scanGameMods(input) {
     for (const entry of entries) {
       if (!entry.isDirectory() || ["shared", "bpmodloadermod"].includes(entry.name.toLowerCase())) continue;
       const type = entry.name.toLowerCase() === "runeschema" ? "framework" : "ue4ss";
-      detected.push({ key: `${type}:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: entry.name, type, location: platform, path: path.join(ue4ssMods, entry.name), files: [], syncEligible: type === "ue4ss" });
+      const modPath = path.join(ue4ssMods, entry.name);
+      const identity = readModIdentity(modPath);
+      detected.push({ key: `${type}:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type, location: platform, path: modPath, files: [], syncEligible: type === "ue4ss" });
     }
 
     const schemaDir = path.join(ue4ssMods, "RuneSchema", "mods");
     try {
-      for (const entry of fs.readdirSync(schemaDir, { withFileTypes: true })) {
-        if (entry.isDirectory() || entry.isFile()) detected.push({ key: `runeschema:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: entry.name, type: "runeschema", location: platform, path: path.join(schemaDir, entry.name), files: [], syncEligible: true });
+      const entries = fs.readdirSync(schemaDir, { withFileTypes: true }).filter((entry) => !/^id\.txt$/i.test(entry.name));
+      const rootIdentity = readModIdentity(schemaDir);
+      for (const entry of entries) {
+        if (!entry.isDirectory() && !entry.isFile()) continue;
+        const modPath = path.join(schemaDir, entry.name);
+        const identity = entry.isDirectory() ? readModIdentity(modPath) : identityMatches(rootIdentity, path.basename(entry.name, path.extname(entry.name)), entries.length === 1);
+        detected.push({ key: `runeschema:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type: "runeschema", location: platform, path: modPath, files: [], syncEligible: true });
       }
     } catch { /* absent */ }
 
@@ -251,5 +311,6 @@ module.exports = {
   normalizeGameInstall,
   discoverGameInstalls,
   scanGameMods,
+  parseModIdentityText,
   resolveWorkshopItem,
 };

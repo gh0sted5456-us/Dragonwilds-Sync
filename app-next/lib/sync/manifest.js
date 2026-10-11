@@ -50,10 +50,14 @@ function walkFiles(root) {
   return out;
 }
 
-function targetBase(mod) {
-  if (mod.type === "pak") return "RSDragonwilds/Content/Paks/~mods";
-  if (mod.type === "ue4ss") return `RSDragonwilds/Binaries/Win64/ue4ss/Mods/${safeSegment(mod.name)}`;
-  if (mod.type === "runeschema") return `RSDragonwilds/Binaries/Win64/ue4ss/Mods/RuneSchema/mods/${safeSegment(mod.name)}`;
+function targetBase(mod, platform = "steam") {
+  const binaryDir = platform === "gamepass" ? "WinGDK" : "Win64";
+  if (mod.type === "pak") {
+    if (mod.pakInstallMode === "runeschema") return `RSDragonwilds/Binaries/${binaryDir}/ue4ss/Mods/RuneSchema/mods/${safeSegment(mod.modId || mod.folderName || mod.name)}/paks`;
+    return "RSDragonwilds/Content/Paks/~mods";
+  }
+  if (mod.type === "ue4ss") return `RSDragonwilds/Binaries/${binaryDir}/ue4ss/Mods/${safeSegment(mod.folderName || mod.name)}`;
+  if (mod.type === "runeschema") return `RSDragonwilds/Binaries/${binaryDir}/ue4ss/Mods/RuneSchema/mods/${safeSegment(mod.folderName || mod.name)}`;
   throw new Error(`Unsupported synchronization lane: ${mod.type}`);
 }
 
@@ -63,8 +67,8 @@ function safeSegment(value) {
   return segment;
 }
 
-function filesForMod(mod) {
-  const base = targetBase(mod);
+function filesForMod(mod, platform = "steam") {
+  const base = targetBase(mod, platform);
   const sourceFiles = mod.type === "pak"
     ? (mod.files || []).map((source) => ({ source, relative: path.basename(source) }))
     : walkFiles(mod.path);
@@ -85,13 +89,18 @@ function buildWorldManifest(worldId, options = {}) {
   const inventory = mods.selectedMods(worldId);
   const runtimeUnits = runtimePackages.syncUnits(worldId, options.platform);
   const modUnits = inventory.map((mod) => {
-    const files = filesForMod(mod);
+    const files = filesForMod(mod, options.platform);
     const identity = crypto.createHash("sha256");
     for (const file of files) identity.update(`${file.target}\0${file.size}\0${file.sha256}\n`);
     return {
       key: mod.selectionKey || mod.key,
       name: mod.name,
       type: mod.type,
+      modId: mod.modId || mod.folderName || mod.name,
+      author: mod.identity?.author || null,
+      runtimeRole: mod.identity?.runtimeRole || null,
+      hotload: mod.identity?.hotload ?? null,
+      installMode: mod.type === "pak" ? mod.pakInstallMode : null,
       clientRequired: true,
       contentHash: identity.digest("hex"),
       fileCount: files.length,
@@ -177,7 +186,7 @@ function resolveWorldFile(worldId, requestedTarget, options = {}) {
   if (runtimeFile) return runtimeFile;
   const inventory = mods.selectedMods(worldId);
   for (const mod of inventory) {
-    const match = filesForMod(mod).find((file) => file.target === target);
+    const match = filesForMod(mod, options.platform).find((file) => file.target === target);
     if (match) return match;
   }
   throw new Error("Mod file is not declared by this World");

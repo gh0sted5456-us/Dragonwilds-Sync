@@ -43,6 +43,8 @@ const P = {
   worldLogDir: (worldId) => ensure(path.join(dataDir(), "logs", worldId)),
   worldBackupDir: (worldId, custom) => ensure(path.join(backupsBase(custom), worldId)),
   worldSaveSlots: (worldId) => ensure(path.join(dataDir(), "save-slots", String(worldId))),
+  clientProfiles: () => ensure(path.join(dataDir(), "player-profiles")),
+  clientProfile: (profileId) => path.join(ensure(path.join(dataDir(), "player-profiles")), String(profileId || "profile").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "profile"),
   // Default WINEPREFIX for a Windows-targeted world run via Wine on Linux.
   // Only created/used when actually needed (see supervisor.js).
   worldWinePrefix: (worldId) => path.join(dataDir(), "wine-prefixes", worldId),

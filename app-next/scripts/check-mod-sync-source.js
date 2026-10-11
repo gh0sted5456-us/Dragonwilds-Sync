@@ -8,6 +8,7 @@ process.env.APP_MANAGER_DATA_DIR = path.join(sandbox, "data");
 
 const dbm = require("../lib/db");
 const lanes = require("../lib/mod-lanes");
+const steamlib = require("../lib/steamlibrary");
 const manifest = require("../lib/sync/manifest");
 const syncAuth = require("../lib/sync/auth");
 
@@ -23,6 +24,15 @@ try {
   const server = makeInstall("server");
   const source = makeInstall("required-source");
   fs.writeFileSync(path.join(source, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak"), "required-mod", "utf8");
+  const pakFolder = path.join(source, "RSDragonwilds", "Content", "Paks", "~mods", "DwarfCannon");
+  fs.mkdirSync(pakFolder, { recursive: true });
+  for (const extension of ["pak", "utoc", "ucas"]) fs.writeFileSync(path.join(pakFolder, `DwarfCannon.${extension}`), extension);
+  fs.writeFileSync(path.join(pakFolder, "ID.txt"), "# Dragonwilds Sync ID v1\nSchema: DragonwildsSync.ID.v1\nModID: DwarfCannon\nName: Dwarf Cannon\nAuthor: Maxxfilth\nRuntimeRole: both\nHOTLOAD = NO\n");
+  const ue4ssFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "ExampleUE4SS");
+  const runeFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "ExampleSchema");
+  fs.mkdirSync(ue4ssFolder, { recursive: true }); fs.mkdirSync(runeFolder, { recursive: true });
+  fs.writeFileSync(path.join(ue4ssFolder, "ID.txt"), "ModID: UEExample\nName: UE Example\nRuntimeRole: server\nHOTLOAD=YES\n");
+  fs.writeFileSync(path.join(runeFolder, "ID.txt"), "ModID: RuneExample\nName: Rune Example\nRuntimeRole: client\nHOTLOAD=NO\n");
 
   dbm.insertWorld({
     world_id: worldId,
@@ -56,6 +66,12 @@ try {
   assert(required?.ready, "Required Player Mods source was not routed");
   const mod = required.mods.find((item) => item.name === "RequiredExample");
   assert(mod?.syncEligible, "Required PAK was not detected");
+  const inventory = steamlib.scanGameMods(source).mods;
+  const identifiedPak = inventory.find((item) => item.modId === "DwarfCannon");
+  assert.equal(identifiedPak?.name, "Dwarf Cannon", "PAK ID.txt was not read");
+  assert.equal(identifiedPak?.identity?.author, "Maxxfilth", "PAK author was not read");
+  assert.equal(inventory.find((item) => item.modId === "UEExample")?.identity?.hotload, true, "UE4SS ID.txt was not read");
+  assert.equal(inventory.find((item) => item.modId === "RuneExample")?.identity?.runtimeRole, "client", "RuneSchema ID.txt was not read");
 
   lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "client" }]);
   assert(!fs.existsSync(path.join(server, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak")), "Client-only mod was copied to the server");
@@ -69,6 +85,12 @@ try {
   lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "both" }]);
   const published = manifest.buildWorldManifest(worldId);
   assert(published.units.some((unit) => unit.name === "RequiredExample" && unit.files.some((file) => file.target.endsWith("RequiredExample.pak"))), "Required mod was not published to player Sync");
+  const runeRouted = lanes.setPakInstallMode(worldId, "runeschema");
+  assert.equal(runeRouted.pakInstallMode, "runeschema");
+  const runePak = path.join(server, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "RequiredExample", "paks", "RequiredExample.pak");
+  assert(fs.existsSync(runePak), "PAK was not moved into its RuneSchema paks folder");
+  assert(!fs.existsSync(path.join(server, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak")), "Classic PAK copy remained after changing destination");
+  assert(manifest.buildWorldManifest(worldId).units.some((unit) => unit.installMode === "runeschema" && unit.files.some((file) => file.target.includes("/RuneSchema/mods/RequiredExample/paks/"))), "RuneSchema PAK destination was not published in the manifest");
   const linked = manifest.withDownloadUrls(worldId, published, "http://127.0.0.1:4317/api/sync/public/required-mod-source-test");
   assert(linked.transport?.supportsDirectDownloads, "Manifest does not advertise direct downloads");
   assert(linked.units[0].files[0].downloadUrl.includes("token="), "Manifest file does not have a signed direct-download link");

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const sup = require("@/lib/supervisor");
 const runtimes = require("@/lib/runtime-packages");
+const jobs = require("@/lib/jobs");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";
@@ -25,11 +26,26 @@ export async function POST(req, { params }) {
   }
   const body = await req.json().catch(() => ({}));
   try {
-    const packages = runtimes.install(params.id, body.component, body.zipPath);
     const kind = String(body.component || "").toLowerCase();
-    const label = kind === "ue4ss-gamepass" ? "UE4SS · PC Game Pass" : kind === "ue4ss-steam" ? "UE4SS · Steam/server" : "RuneSchema";
-    dbm.logEvent(params.id, "mods", `Installed managed ${label} runtime package for host + client Sync`);
-    return NextResponse.json({ ok: true, packages });
+    const label = kind === "ue4ss-gamepass" ? "UE4SS · PC Game Pass" : kind === "ue4ss-steam" ? "UE4SS · Steam" : kind === "ue4ss-server" ? "UE4SS · Dedicated Server" : "RuneSchema";
+    const active = jobs.listJobs().find((job) => job.status === "running" && job.worldId === params.id && job.worldName === `${w.display_name} · ${label}`);
+    if (active) return NextResponse.json({ ok: true, jobId: active.id, alreadyRunning: true });
+    const jobId = jobs.createJob({ type: "runtime", worldId: params.id, worldName: `${w.display_name} · ${label}` });
+    setImmediate(async () => {
+      try {
+        await runtimes.install(params.id, kind, body.zipPath, ({ phase, percent, message, line }) => {
+          jobs.setPhase(jobId, phase, message);
+          jobs.setProgress(jobId, percent, message);
+          if (line) jobs.logJob(jobId, line);
+        });
+        dbm.logEvent(params.id, "mods", `Installed managed ${label} runtime package for host + client Sync`);
+        jobs.finishJob(jobId, true, { worldId: params.id });
+      } catch (error) {
+        jobs.logJob(jobId, `ERROR: ${error.message}`);
+        jobs.finishJob(jobId, false, { worldId: params.id, error: error.message });
+      }
+    });
+    return NextResponse.json({ ok: true, jobId });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
   }

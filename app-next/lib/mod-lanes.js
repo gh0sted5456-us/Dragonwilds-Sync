@@ -8,6 +8,11 @@ const LANES = ["server", "required", "steam", "gamepass"];
 const selectionKey = (worldId) => `modLaneSelection:${worldId}`;
 const ledgerKey = (worldId) => `modLaneLedger:${worldId}`;
 const requiredSourceKey = (worldId) => `modRequiredSource:${worldId}`;
+const pakInstallModeKey = (worldId) => `pakInstallMode:${worldId}`;
+
+function readPakInstallMode(worldId) {
+  return dbm.getSetting(pakInstallModeKey(worldId), "classic") === "runeschema" ? "runeschema" : "classic";
+}
 
 function readList(key) {
   const value = dbm.getSetting(key, []);
@@ -49,7 +54,7 @@ function readSelections(worldId) {
   return normalizeSelections(dbm.getSetting(selectionKey(worldId), []));
 }
 
-function scanLane(lane, root, selected) {
+function scanLane(lane, root, selected, pakInstallMode) {
   const label = lane === "server" ? "Server Host" : lane === "required" ? "Required Player Mods" : lane === "steam" ? "Steam Player" : "PC Game Pass Player";
   const base = { id: lane, label, root, ready: false, mods: [], error: null };
   if (!root) return { ...base, error: "Install folder has not been selected." };
@@ -58,7 +63,7 @@ function scanLane(lane, root, selected) {
     return { ...base, root: scanned.installDir, ready: true, mods: scanned.mods.map((mod) => {
       const key = `${lane}|${mod.key}`;
       const managed = selected.get(key);
-      return { ...mod, lane, selectionKey: key, selected: !!managed, scope: managed?.scope || "both", clientRequired: managed?.scope !== "server" };
+      return { ...mod, pakInstallMode: mod.type === "pak" ? pakInstallMode : undefined, lane, selectionKey: key, selected: !!managed, scope: managed?.scope || "both", clientRequired: managed?.scope !== "server" };
     }) };
   } catch (e) { return { ...base, error: e.message }; }
 }
@@ -67,22 +72,32 @@ function status(worldId) {
   const modSelections = readSelections(worldId);
   const selected = new Map(modSelections.map((item) => [item.key, item]));
   const laneRoots = roots(worldId);
+  const pakInstallMode = readPakInstallMode(worldId);
   return {
-    modLanes: LANES.map((lane) => scanLane(lane, laneRoots[lane], selected)),
+    modLanes: LANES.map((lane) => scanLane(lane, laneRoots[lane], selected, pakInstallMode)),
     modSelections,
     modLaneSelections: modSelections.map((item) => item.key),
+    pakInstallMode,
   };
 }
 
 function serverGameRoot(installDir) { const nested = path.join(installDir, "RSDragonwilds"); return fs.existsSync(nested) ? nested : installDir; }
-function destinationFor(serverRoot, mod) {
+function safeModFolder(value) {
+  const name = String(value || "").trim();
+  if (!name || name === "." || name === ".." || /[\\/:*?"<>|]/.test(name)) throw new Error("ID.txt contains an unsafe ModID");
+  return name;
+}
+function destinationFor(serverRoot, mod, worldId) {
   const game = serverGameRoot(serverRoot);
-  if (mod.type === "pak") return path.join(game, "Content", "Paks", "~mods");
+  if (mod.type === "pak") {
+    if (readPakInstallMode(worldId) === "runeschema") return path.join(game, "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", safeModFolder(mod.modId || mod.folderName || mod.name), "paks");
+    return path.join(game, "Content", "Paks", "~mods");
+  }
   // Dedicated Windows servers always consume the Win64 tree, even when the
   // source mod was discovered under a Game Pass WinGDK client install.
   const platform = "Win64";
-  if (mod.type === "ue4ss") return path.join(game, "Binaries", platform, "ue4ss", "Mods", mod.name);
-  if (mod.type === "runeschema") return path.join(game, "Binaries", platform, "ue4ss", "Mods", "RuneSchema", "mods", mod.name);
+  if (mod.type === "ue4ss") return path.join(game, "Binaries", platform, "ue4ss", "Mods", safeModFolder(mod.folderName || mod.name));
+  if (mod.type === "runeschema") return path.join(game, "Binaries", platform, "ue4ss", "Mods", "RuneSchema", "mods", safeModFolder(mod.folderName || mod.name));
   return null;
 }
 function copyDir(source, destination) {
@@ -134,7 +149,7 @@ function setSelections(worldId, requested) {
     const mod = available.get(key);
     const selection = selections.find((item) => item.key === key);
     if (selection.scope === "client") continue;
-    const destination = destinationFor(world.install_dir, mod);
+    const destination = destinationFor(world.install_dir, mod, worldId);
     const targets = mod.type === "pak"
       ? (mod.files || []).map((source) => path.join(destination, path.basename(source)))
       : [destination];
@@ -151,7 +166,7 @@ function setSelections(worldId, requested) {
     const mod = available.get(key);
     const selection = selections.find((item) => item.key === key);
     if (mod.lane === "server" || selection.scope === "client") continue;
-    const destination = destinationFor(world.install_dir, mod);
+    const destination = destinationFor(world.install_dir, mod, worldId);
     if (destination) copied.push(...copyMod(mod, destination));
   }
   const retained = new Set(copied.map((value) => path.resolve(value).toLowerCase()));
@@ -189,6 +204,14 @@ function setRequiredSource(worldId, requestedPath) {
   return status(worldId);
 }
 
+function setPakInstallMode(worldId, requestedMode) {
+  if (!dbm.getWorld(worldId)) throw new Error("World not found");
+  const mode = requestedMode === "runeschema" ? "runeschema" : "classic";
+  dbm.setSetting(pakInstallModeKey(worldId), mode);
+  dbm.logEvent(worldId, "mod", mode === "runeschema" ? "PAK destination changed to RuneSchema-managed mod folders" : "PAK destination changed to Content/Paks/~mods");
+  return setSelections(worldId, readSelections(worldId));
+}
+
 function browse(worldId, lane, relative = "") {
   if (!LANES.includes(lane)) throw new Error("Unknown mod lane");
   const root = roots(worldId)[lane];
@@ -204,4 +227,4 @@ function browse(worldId, lane, relative = "") {
   return { lane, root: base, relative: parts.join("/"), current, breadcrumbs: parts.map((name, index) => ({ name, relative: parts.slice(0, index + 1).join("/") })), directories };
 }
 
-module.exports = { status, setSelections, selectedMods, browse, setRequiredSource, reapplySelections, readSelections };
+module.exports = { status, setSelections, selectedMods, browse, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };

@@ -10,9 +10,10 @@ const PHASE_LABELS = {
   starting: "Starting", steamcmd: "Updating SteamCMD", prepare: "Preparing",
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
+  runtime: "Installing mod loader",
 };
 export function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
-export function labelFor(job) { return job.worldName || (job.type === "install" ? "New server" : job.type === "redist" ? "Prerequisites" : "Server update"); }
+export function labelFor(job) { return job.worldName || (job.type === "install" ? "New server" : job.type === "redist" ? "Prerequisites" : job.type === "runtime" ? "Mod loader" : job.type === "sync" ? "World mod sync" : "Server update"); }
 
 // Poll /api/jobs, fast while something runs, relaxed when idle. Exposes
 // A shared browser event lets any page request an immediate refresh after starting.

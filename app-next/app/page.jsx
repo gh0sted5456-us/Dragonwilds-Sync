@@ -16,6 +16,7 @@ export default function WorldsPage() {
   const [busy, setBusy] = useState({});
   const [checking, setChecking] = useState(false);
   const [activeServerId, setActiveServerId] = useState(null);
+  const [serverLayout, setServerLayout] = useLayoutPreference("server");
 
   const load = useCallback(async () => {
     try {
@@ -89,6 +90,7 @@ export default function WorldsPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.6rem" }}>
+          <LayoutToggle value={serverLayout} onChange={setServerLayout} label="Server profile view" />
           <button className="btn btn-ghost" onClick={checkUpdates} disabled={checking}>
             <Icon name="refresh" /> {checking ? t("common.checking") : t("worlds.checkUpdates")}
           </button>
@@ -103,9 +105,11 @@ export default function WorldsPage() {
       ) : worlds.length === 0 ? (
         <EmptyState onCreate={() => setShowCreate(true)} />
       ) : (
-        <div style={{ display: "grid", gap: "0.9rem" }}>
+        <div className={serverLayout === "placards" ? "rsdw-placard-grid" : "rsdw-row-list"}>
           {worlds.map((w) => (
-            <WorldRow key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
+            serverLayout === "placards"
+              ? <WorldPlacard key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
+              : <WorldRow key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
           ))}
         </div>
       )}
@@ -125,6 +129,28 @@ function ModeTab({ active, onClick, icon, label, detail }) {
   </button>;
 }
 
+function useLayoutPreference(scope) {
+  const [value, setValue] = useState("rows");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`rsdw-${scope}-layout`);
+      if (saved === "placards" || saved === "rows") setValue(saved);
+    } catch {}
+  }, [scope]);
+  const update = useCallback((next) => {
+    setValue(next);
+    try { localStorage.setItem(`rsdw-${scope}-layout`, next); } catch {}
+  }, [scope]);
+  return [value, update];
+}
+
+function LayoutToggle({ value, onChange, label }) {
+  return <div className="layout-toggle" role="group" aria-label={label}>
+    <button className={value === "placards" ? "active" : ""} onClick={() => onChange("placards")} title="Placards" aria-label="Show placards" aria-pressed={value === "placards"}><Icon name="grid" size={16} /></button>
+    <button className={value === "rows" ? "active" : ""} onClick={() => onChange("rows")} title="Rows" aria-label="Show rows" aria-pressed={value === "rows"}><Icon name="list" size={16} /></button>
+  </div>;
+}
+
 function PlayerHub() {
   const [profiles, setProfiles] = useState([]);
   const [results, setResults] = useState([]);
@@ -135,6 +161,7 @@ function PlayerHub() {
   const [finding, setFinding] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const [profileLayout, setProfileLayout] = useLayoutPreference("player");
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
   useEffect(() => {
@@ -192,9 +219,12 @@ function PlayerHub() {
         <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1>
         <p className="subtle" style={{ fontWeight: 700, marginBottom: 0 }}>Keep as many Worlds as you like. Connect, compare and resync only when you need to.</p>
       </div>
-      <button className="btn btn-primary" onClick={() => setConnectOpen((open) => !open)}>
-        {connectOpen ? <span aria-hidden style={{ fontSize: "1.25rem", lineHeight: 1 }}>×</span> : <Icon name="globe" />} {connectOpen ? "Close" : "Connect to World"}
-      </button>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <LayoutToggle value={profileLayout} onChange={setProfileLayout} label="Friend profile view" />
+        <button className="btn btn-primary" onClick={() => setConnectOpen((open) => !open)}>
+          {connectOpen ? <span aria-hidden style={{ fontSize: "1.25rem", lineHeight: 1 }}>×</span> : <Icon name="globe" />} {connectOpen ? "Close" : "Connect to World"}
+        </button>
+      </div>
     </header>
     {connectOpen && <>
     {!installs.steam && !installs.gamepass && <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", border: "1px solid var(--yellow)" }}>
@@ -234,20 +264,10 @@ function PlayerHub() {
     </div>
     </>}
     {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Choose Connect to World to discover a LAN broadcast or enter a server IP, then keep the Worlds you play on here.</p></div> :
-      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => {
-        const identity = p.connection?.worldIdentity || {};
-        const banner = identity.bannerData || `/rsdw/placards/${index % 9 + 1}.webp`;
-        const icon = identity.iconData || portraitFor(p.profile_id);
-        return <div className="panel" key={p.profile_id}
-          onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, profile: p }); }}
-          title="Right-click for World actions"
-          style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76, borderColor: identity.accentColor || undefined }}>
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url("${banner}") center/cover`, opacity: .48 }} />
-        <img src={icon} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
-        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="MANIFEST SAVED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} /><RsdwBadge label={p.connection?.rules?.access || p.connection?.worldType || "Private"} />{p.connection?.rules?.passwordRequired && <RsdwBadge label="PASSWORD" />}{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4318} · {installs[(p.connection?.platform || "steam")] || "Application Setup required"}</div></div>
-        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Sync</Link>
-        <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
-      </div>})}</div>}
+      <div className={profileLayout === "placards" ? "rsdw-placard-grid" : "rsdw-row-list"}>{profiles.map((p, index) => {
+        const props = { key: p.profile_id, profile: p, index, installs, onRemove: remove, onContext: (e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, profile: p }); } };
+        return profileLayout === "placards" ? <PlayerPlacard {...props} /> : <PlayerRow {...props} />;
+      })}</div>}
 
     {contextMenu && <div className="panel" style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 200, padding: 6, minWidth: 190, boxShadow: "0 10px 28px rgba(0,0,0,.35)" }}>
       <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start" }}
@@ -263,6 +283,75 @@ const fieldStyle = { width: "100%", boxSizing: "border-box", border: "1px solid 
 const portraits = ["female_auburn_ponytail.webp", "female_cobalt_warrior_ponytail.webp", "female_dark_curls.webp", "female_teal_battlemage_braids.webp", "male_blond_undercut.webp", "male_dark_curls.webp", "male_forest_ranger_dreadlocks.webp", "androgynous_burgundy_battlemage.webp"];
 function portraitFor(value = "") { let hash = 0; for (const c of value) hash = ((hash << 5) - hash + c.charCodeAt(0)) | 0; return `/rsdw/portraits/${portraits[Math.abs(hash) % portraits.length]}`; }
 function RsdwBadge({ label }) { return <span style={{ display: "inline-flex", alignItems: "center", minHeight: 19, padding: "2px 7px", border: "1px solid color-mix(in srgb,var(--yellow) 45%,var(--line))", borderRadius: 999, background: "color-mix(in srgb,var(--yellow) 9%,var(--card))", color: "var(--yellow)", fontSize: ".62rem", fontWeight: 900, letterSpacing: ".045em" }}>{label}</span>; }
+
+function PlayerBadges({ profile }) {
+  return <div className="placard-badges">
+    <RsdwBadge label="MANIFEST SAVED" />
+    {profile.connection?.cachedModProfile?.files > 0 && <RsdwBadge label={`PROFILE CACHE · ${profile.connection.cachedModProfile.files}`} />}
+    <RsdwBadge label={(profile.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />
+    <RsdwBadge label={profile.connection?.rules?.access || profile.connection?.worldType || "Private"} />
+    {profile.connection?.rules?.passwordRequired && <RsdwBadge label="PASSWORD" />}
+    {(profile.connection?.modBadges || []).map((badge) => <RsdwBadge key={badge} label={badge} />)}
+    {profile.connection?.modCount > 0 && <RsdwBadge label={`${profile.connection.modCount} MODS`} />}
+  </div>;
+}
+
+function PlayerRow({ profile, index, installs, onRemove, onContext }) {
+  const identity = profile.connection?.worldIdentity || {};
+  const banner = identity.bannerData || `/rsdw/placards/${index % 9 + 1}.webp`;
+  const icon = identity.iconData || portraitFor(profile.profile_id);
+  return <div className="panel world-card" onContextMenu={onContext} title="Right-click for World actions"
+    style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76, borderColor: identity.accentColor || undefined }}>
+    <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url("${banner}") center/cover`, opacity: .48 }} />
+    <img src={icon} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
+    <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{profile.display_name}</strong><PlayerBadges profile={profile} /><div className="subtle" style={{ fontSize: ".78rem" }}>{profile.connection?.address || profile.connection?.internalIp || "No address"}:{profile.connection?.syncPort || 4318} · {installs[(profile.connection?.platform || "steam")] || "Application Setup required"}</div></div>
+    <Link className="btn btn-primary" href={`/profiles/${profile.profile_id}/player`}>Sync</Link>
+    <button className="btn btn-ghost" title="Remove profile" onClick={() => onRemove(profile)}><Icon name="trash" /></button>
+  </div>;
+}
+
+function PlayerPlacard({ profile, index, installs, onRemove, onContext }) {
+  const identity = profile.connection?.worldIdentity || {};
+  const banner = identity.bannerData || `/rsdw/placards/${index % 9 + 1}.webp`;
+  const icon = identity.iconData || portraitFor(profile.profile_id);
+  const endpoint = `${profile.connection?.address || profile.connection?.internalIp || "No address"}:${profile.connection?.syncPort || 4318}`;
+  return <article className="rsdw-placard" onContextMenu={onContext} title="Right-click for World actions" style={{ "--placard-accent": identity.accentColor || "var(--yellow)" }}>
+    <div className="rsdw-placard-mode">CONNECTED WORLD</div>
+    <div className="rsdw-placard-media"><img src={banner} alt="" /><div /></div>
+    <div className="rsdw-placard-body">
+      <div className="rsdw-placard-identity"><img src={icon} alt="" /><div><h2>{profile.display_name}</h2><span>{endpoint}</span></div></div>
+      <p>{identity.description || "A saved Dragonwilds World manifest ready to compare and synchronize."}</p>
+      <PlayerBadges profile={profile} />
+      <div className="rsdw-placard-detail"><span>PLAYER LANE</span><strong>{(profile.connection?.platform || "steam") === "gamepass" ? "PC Game Pass" : "Steam"}</strong><small>{installs[(profile.connection?.platform || "steam")] || "Setup required"}</small></div>
+    </div>
+    <div className="rsdw-placard-actions"><Link className="btn btn-primary" href={`/profiles/${profile.profile_id}/player`}>Sync World</Link><button className="btn btn-ghost" title="Remove profile" onClick={() => onRemove(profile)}><Icon name="trash" /></button></div>
+  </article>;
+}
+
+function WorldPlacard({ w, active, busy, onAction, onActivate }) {
+  const { t } = useTranslation();
+  const isBusy = !!busy;
+  const accent = w.accent_color || "var(--yellow)";
+  const banner = w.banner_data || `/rsdw/placards/${Math.abs(String(w.world_id).length % 9) + 1}.webp`;
+  return <article className="rsdw-placard" style={{ "--placard-accent": accent }}>
+    <div className="rsdw-placard-mode">DEDICATED SERVER</div>
+    <div className="rsdw-placard-media"><img src={banner} alt="" /><div /></div>
+    <div className="rsdw-placard-body">
+      <div className="rsdw-placard-identity">
+        <div className="rsdw-placard-icon">{w.icon_data ? <img src={w.icon_data} alt="" /> : <img src="/rsdw/dragonwilds-mark.png" alt="" />}</div>
+        <div><h2><Link href={`/worlds/${w.world_id}`}>{w.display_name}</Link></h2><span>Build {w.build_id || "unknown"} · Game port {w.game_port}</span></div>
+      </div>
+      <div className="placard-badges"><StatusChip status={w.status} running={w.running} />{active && <RsdwBadge label="ACTIVE PROFILE" />}{w.updateAvailable && <RsdwBadge label="UPDATE AVAILABLE" />}<RsdwBadge label={w.profileBadges?.host || (w.platform === "windows" ? "WINDOWS SERVER" : "LINUX SERVER")} />{(w.profileBadges?.platforms || []).map((label) => <RsdwBadge key={label} label={label} />)}{(w.profileBadges?.loaders || []).map((label) => <RsdwBadge key={label} label={label} />)}</div>
+      <div className="rsdw-placard-stats"><Stat label={t("common.players")} value={w.live ? `${w.live.currentPlayers}${w.live.maxPlayers ? "/" + w.live.maxPlayers : ""}` : "—"} /><Stat label={t("common.uptime")} value={w.live ? fmtUptime(w.live.uptime) : "—"} /><Stat label={t("common.day")} value={w.live?.days ?? "—"} /></div>
+    </div>
+    <div className="rsdw-placard-actions">
+      {!active && <button className="btn btn-ghost" disabled={isBusy || w.running} onClick={() => onActivate(w.world_id)}><Icon name="check" /> Activate</button>}
+      <button className="btn btn-ghost" disabled={isBusy || w.running} onClick={() => onAction(w.world_id, "update")}><Icon name="download" /> Update</button>
+      {w.running ? <><button className="btn btn-ghost" disabled={isBusy} onClick={() => onAction(w.world_id, "restart")}><Icon name="restart" /></button><button className="btn btn-danger" disabled={isBusy} onClick={() => onAction(w.world_id, "stop")}><Icon name="stop" /></button></> : <button className="btn btn-primary" disabled={isBusy} onClick={() => onAction(w.world_id, "start")}><Icon name="play" /> {busy === "start" ? t("common.starting") : t("common.start")}</button>}
+      <Link href={`/worlds/${w.world_id}`} className="btn btn-ghost">{t("common.manage")}</Link>
+    </div>
+  </article>;
+}
 
 function WorldRow({ w, active, busy, onAction, onActivate }) {
   const { t } = useTranslation();

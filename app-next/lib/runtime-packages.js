@@ -69,7 +69,7 @@ function removeEmptyParents(file, stop) {
     current = path.dirname(current);
   }
 }
-function install(worldId, component, zipPath) {
+async function install(worldId, component, zipPath, onProgress = () => {}) {
   const kind = String(component || "").trim().toLowerCase();
   if (!COMPONENTS.has(kind)) throw new Error("Runtime component must be UE4SS Server, UE4SS Steam, UE4SS Game Pass, or RuneSchema.");
   const world = dbm.getWorld(worldId);
@@ -89,6 +89,7 @@ function install(worldId, component, zipPath) {
   fs.mkdirSync(candidate, { recursive: true });
   const records = [];
   try {
+    onProgress({ phase: "prepare", percent: 2, message: "Reading runtime archive…", line: `Reading ${path.basename(zipPath)} (${entries.length} files)` });
     for (let i = 0; i < entries.length; i++) {
       const relativeParts = normalizeRuntimePath(kind, normalized[i]);
       if (!relativeParts) continue;
@@ -104,7 +105,13 @@ function install(worldId, component, zipPath) {
         sha256: sha256File(output),
         clientEligible: kind !== "ue4ss-server",
       });
+      const percent = Math.max(3, Math.round(((i + 1) / entries.length) * 75));
+      onProgress({ phase: "install", percent, message: `Extracting ${kind}…`, line: `[${percent}%] ${entries[i].entryName}` });
+      // Yield between archive batches so the job API and Downloads page remain
+      // responsive during large UE4SS/RuneSchema packages.
+      if (i % 8 === 7) await new Promise((resolve) => setImmediate(resolve));
     }
+    onProgress({ phase: "verify", percent: 82, message: "Verifying runtime layout…", line: "Verifying required loader files and hashes…" });
     if (kind.startsWith("ue4ss-")) {
       const platformDir = kind === "ue4ss-gamepass" ? "wingdk" : "win64";
       if (!records.some((r) => r.relative.toLowerCase() === `binaries/${platformDir}/ue4ss/ue4ss.dll`)) {
@@ -129,6 +136,7 @@ function install(worldId, component, zipPath) {
     }
 
     const permanent = filesRoot(worldId, kind);
+    onProgress({ phase: "install", percent: 90, message: "Installing verified runtime…", line: "Promoting verified runtime package…" });
     fs.rmSync(permanent, { recursive: true, force: true });
     fs.renameSync(candidate, permanent);
     const meta = {
@@ -140,6 +148,7 @@ function install(worldId, component, zipPath) {
       files: records,
     };
     fs.writeFileSync(manifestPath(worldId, kind), JSON.stringify(meta, null, 2), "utf8");
+    onProgress({ phase: "finalizing", percent: 100, message: "Runtime installed", line: `Installed ${records.length} verified runtime files.` });
     return status(worldId);
   } finally {
     if (fs.existsSync(candidate)) fs.rmSync(candidate, { recursive: true, force: true });

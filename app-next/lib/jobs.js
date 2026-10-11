@@ -141,7 +141,7 @@ const PHASE_LABELS = {
   starting: "Starting", steamcmd: "Updating SteamCMD", prepare: "Preparing",
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
-  redist: "Installing prerequisites",
+  redist: "Installing prerequisites", runtime: "Installing mod loader",
 };
 function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
 

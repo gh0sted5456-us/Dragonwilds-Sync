@@ -41,7 +41,9 @@ export default function PlayerProfile({ params }) {
   const sync = async () => {
     setChecking(true);
     try {
-      const response = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
+      const request = api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
+      setTimeout(() => { try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {} }, 250);
+      const response = await request;
       const { installed, removed, manifest } = response.result;
       setResult({ current: true, changes: [], units: summarizeUnits(manifest), transport: manifest.transport, prerequisites: manifest.prerequisites });
       await refreshProfile();
@@ -102,7 +104,9 @@ export default function PlayerProfile({ params }) {
         await refreshProfile();
         if (!verified.comparison.current) {
           setFlowStep(`Synchronizing ${verified.comparison.changes.length} managed file(s)…`);
-          const synced = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
+          const request = api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
+          setTimeout(() => { try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {} }, 250);
+          const synced = await request;
           setResult({ current: true, changes: [], units: summarizeUnits(synced.result.manifest), transport: synced.result.manifest.transport, prerequisites: synced.result.manifest.prerequisites });
           await refreshProfile();
         }

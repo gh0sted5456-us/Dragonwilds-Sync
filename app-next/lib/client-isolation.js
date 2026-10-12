@@ -10,21 +10,18 @@ const verifiedHashCache = new Map();
 function normalizedInstall(input) {
   const install = steamlib.normalizeGameInstall(input);
   if (!install) throw new Error("Choose a valid Dragonwilds game installation before managing profile files.");
-  try { return fs.realpathSync.native(install); }
-  catch (error) {
-    if (error.code !== "EPERM") throw error;
-    // Some Windows installations disallow realpath's reparse-point query.
-    // Fall back only when every existing segment is a normal directory.
-    const resolved = path.resolve(install);
-    const root = path.parse(resolved).root;
-    let current = root;
-    for (const segment of resolved.slice(root.length).split(path.sep).filter(Boolean)) {
-      current = path.join(current, segment);
-      const stat = fs.lstatSync(current);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`Game installation uses an unverified link: ${current}`);
-    }
-    return resolved;
+  // Use the same lexical root as sync/client.js when deriving ledger keys.
+  // realpathSync.native may return a \\?\ path on some Windows runners,
+  // causing a managed projection to look like an unmanaged file.
+  const resolved = path.resolve(install);
+  const root = path.parse(resolved).root;
+  let current = root;
+  for (const segment of resolved.slice(root.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const stat = fs.lstatSync(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`Game installation uses an unverified link: ${current}`);
   }
+  return resolved;
 }
 
 function locationKey(install) {

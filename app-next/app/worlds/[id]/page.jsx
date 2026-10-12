@@ -174,7 +174,7 @@ export default function WorldDetail() {
       <div className="panel" style={{ padding: "1.3rem" }}>
         {tab === "overview" && <TabSlot key="overview" id="overview"><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
         {tab === "console" && <TabSlot key="console" id="console"><LogsPanel worldId={id} /></TabSlot>}
-        {tab === "settings" && <TabSlot key="settings" id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
+        {tab === "settings" && <TabSlot key="settings" id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} onChange={load} /></TabSlot>}
         {tab === "backups" && <TabSlot key="backups" id="backups"><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
         {tab === "schedule" && <TabSlot key="schedule" id="schedule"><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} /></TabSlot>}
         {tab === "mods" && <TabSlot key="mods" id="mods">

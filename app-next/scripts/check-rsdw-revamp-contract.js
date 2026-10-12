@@ -249,7 +249,9 @@ function contains(rel, needle, message) {
   contains("lib/supervisor.js", "provision.verifyActiveSaveSlot");
   contains("electron/preload.js", "pickWorldSave");
   contains("electron/main.js", 'ipcMain.handle("pick-world-save"');
-  contains("components/BackupsPanel.jsx", "check.activeSave");
+  contains("components/WorldSaveSlotsPanel.jsx", "check.activeSave");
+  contains("components/SettingsEditor.jsx", "<WorldSaveSlotsPanel");
+  contains("lib/supervisor.js", "assertSelectedSaveReady(worldId)");
 }
 
 // Packaged builds identify their Git commit and version channel; both current

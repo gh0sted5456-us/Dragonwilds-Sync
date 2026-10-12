@@ -235,6 +235,8 @@ async function startWorldUnlocked(worldId) {
     dbm.logEvent(worldId, "settings", "Generated a missing admin password (REST API needs one)");
   }
   if (!fs.existsSync(world.install_dir)) throw new Error(`Server install folder missing: ${world.install_dir}`);
+  const selectedSave = require("./provision").assertSelectedSaveReady(worldId);
+  if (selectedSave) dbm.logEvent(worldId, "start", `Preflight confirmed selected world save ${selectedSave.activeSave} (${selectedSave.size} bytes)`);
   // Activation already wrote the profile once. Re-apply after any generated REST
   // password and require a successful read-back before spawning the server.
   ini.applyWorldNetworkSettings(world.install_dir, world);
@@ -297,6 +299,26 @@ async function startWorldUnlocked(worldId) {
 
   child.stdout.on("data", (d) => splitLines(d).forEach((l) => pushLog(worldId, l)));
   child.stderr.on("data", (d) => splitLines(d).forEach((l) => pushLog(worldId, l)));
+  // The preflight prevents a wrong save at spawn time. Watch early startup too:
+  // if Dragonwilds rejects it and creates a fallback .sav, stop immediately
+  // rather than leaving a Standard world running under this profile.
+  if (selectedSave) {
+    let checks = 0;
+    const checkSelectedSave = () => {
+      if (S.procs.get(worldId) !== child || ++checks > 18) return;
+      try { require("./provision").assertSelectedSaveReady(worldId); }
+      catch (error) {
+        pushLog(worldId, `Selected world save verification failed after launch: ${error.message}`);
+        dbm.logEvent(worldId, "start", `Stopped to prevent a fallback world: ${error.message}`);
+        void stopWorld(worldId, { graceful: false }).catch((stopError) => pushLog(worldId, `Could not stop fallback world: ${stopError.message}`));
+        return;
+      }
+      const timer = setTimeout(checkSelectedSave, 5000);
+      timer.unref?.();
+    };
+    const timer = setTimeout(checkSelectedSave, 5000);
+    timer.unref?.();
+  }
   child.on("close", (code) => {
     S.procs.delete(worldId);
     const w = dbm.getWorld(worldId);
@@ -474,6 +496,7 @@ function switchWorldSave(worldId, slotName, { startAfter = true, waittime = 5 } 
       }
       await new Promise((resolve) => setTimeout(resolve, 700));
       const launch = await startWorldUnlocked(worldId);
+      if (!launch.started) throw new Error(`Selected save was staged, but the server did not start: ${launch.reason || "unknown reason"}`);
       return { ...activated, verified, wasRunning, restarted: !!launch.started, launch };
     } catch (error) {
       S.desired.set(worldId, "stopped");
@@ -504,6 +527,7 @@ function importAndSwitchWorldSave(worldId, sourcePath, options = {}) {
       }
       await new Promise((resolve) => setTimeout(resolve, 700));
       const launch = await startWorldUnlocked(worldId);
+      if (!launch.started) throw new Error(`Imported save was staged, but the server did not start: ${launch.reason || "unknown reason"}`);
       return { ...activated, verified, wasRunning, restarted: !!launch.started, launch };
     } catch (error) {
       S.desired.set(worldId, "stopped");

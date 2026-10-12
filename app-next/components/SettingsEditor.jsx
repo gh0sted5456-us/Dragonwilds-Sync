@@ -4,6 +4,7 @@ import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import IniEditor from "@/components/IniEditor";
 import PlayerCapPanel from "@/components/PlayerCapPanel";
+import WorldSaveSlotsPanel from "@/components/WorldSaveSlotsPanel";
 
 // Legacy tuning presets are intentionally not part of Dragonwilds profiles.
 const PRESETS = {};
@@ -28,7 +29,7 @@ function encode(type, val) {
   return String(val);
 }
 
-export default function SettingsEditor({ worldId, world, running, onGoToAdmin }) {
+export default function SettingsEditor({ worldId, world, running, onGoToAdmin, onChange }) {
   const { t } = useTranslation();
   const [iniOpen, setIniOpen] = useState(false);
   const [groups, setGroups] = useState(null);
@@ -137,6 +138,7 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
       <Notice color="var(--accent)">
         <Icon name="clock" size={14} /> <Trans i18nKey="editor.onlyChangedNotice" components={{ b: <b /> }} />
       </Notice>
+      <WorldSaveSlotsPanel worldId={worldId} running={running} onChange={onChange} />
       {changedKeys.length > 0 && (
         <Notice color="var(--green)">
           <Trans i18nKey="editor.unsavedNotice" count={changedKeys.length}

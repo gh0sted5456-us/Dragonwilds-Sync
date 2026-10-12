@@ -176,8 +176,8 @@ function listSaveSlots(worldId) {
   const selected = dbm.getSetting(activeSaveKey(worldId), null)?.name?.toLowerCase();
   // Existing installs may predate slot state. Dragonwilds loads the newest file,
   // so represent only that file as active instead of marking every .sav active.
-  const activeName = selected && live.some((entry) => entry.name.toLowerCase() === selected)
-    ? selected
+  const activeName = selected
+    ? (live.some((entry) => entry.name.toLowerCase() === selected) ? selected : null)
     : live[0]?.name?.toLowerCase();
   const vault = P.worldSaveSlots(worldId);
   return fs.readdirSync(vault, { withFileTypes: true })
@@ -207,6 +207,23 @@ function verifyActiveSaveSlot(worldId, slotName) {
     throw new Error(`World activation verification failed: ${activeSave} did not copy intact`);
   }
   return { activeSave, size: actualSize, sha256: actualSha256, path: live[0].path };
+}
+
+// Once a server profile has an explicitly selected save, every subsequent
+// launch must still point at that save. A missing or second .sav would let the
+// game create/load a different world, so fail closed before spawning it.
+function assertSelectedSaveReady(worldId) {
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  const selected = dbm.getSetting(activeSaveKey(worldId), null)?.name;
+  if (!selected) return null; // Existing unmanaged servers keep their legacy behavior.
+  const activeSave = safeSaveName(selected);
+  const live = liveSaveEntries(world);
+  if (live.length !== 1 || live[0].name.toLowerCase() !== activeSave.toLowerCase()) {
+    throw new Error(`Selected world save ${activeSave} is not the only .sav in SaveGames. Open Server Settings → World save to activate it again before starting.`);
+  }
+  if (!live[0].stat.size) throw new Error(`Selected world save ${activeSave} is empty; server start was blocked to prevent a Standard world.`);
+  return { activeSave, size: live[0].stat.size, path: live[0].path };
 }
 
 function moveDirectory(source, destination) {
@@ -336,5 +353,5 @@ function copyDir(src, dst) {
 module.exports = {
   createProfile, adoptExistingInstall,
   validateSaveSource, validateSaveZip: validateSaveSource, stageSaveSlot, importSave,
-  listSaveSlots, activateSaveSlot, verifyActiveSaveSlot, copyDir,
+  listSaveSlots, activateSaveSlot, verifyActiveSaveSlot, assertSelectedSaveReady, copyDir,
 };

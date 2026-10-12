@@ -28,7 +28,7 @@ export default function RootLayout({ children }) {
         {/* Set theme before paint to avoid flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('rsdw-theme')||'dark';if(t==='dark')document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}})();`,
+            __html: `(function(){var t='dark';try{t=localStorage.getItem('rsdw-theme')||'dark';}catch(e){}if(['dark','amethyst','ember','frost'].indexOf(t)<0)t='dark';document.documentElement.classList.add('dark');document.documentElement.dataset.rsdwTheme=t;})();`,
           }}
         />
       </head>

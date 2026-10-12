@@ -12,7 +12,11 @@ export async function GET(req, { params }) {
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "backups" });
   if (denied) return denied;
   try {
-    return NextResponse.json({ ok: true, slots: provision.listSaveSlots(params.id), running: sup.isAlive(params.id) });
+    const slots = provision.listSaveSlots(params.id);
+    let selectedSaveError = null;
+    try { provision.assertSelectedSaveReady(params.id); }
+    catch (error) { selectedSaveError = error.message; }
+    return NextResponse.json({ ok: true, slots, selectedSaveError, running: sup.isAlive(params.id) });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   }

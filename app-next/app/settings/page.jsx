@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import { PageHeader } from "@/components/PageChrome";
+import { APP_THEMES, useTheme } from "@/components/ThemeProvider";
 // Pal name mapping removed for RSDW — Pals are not a thing in Dragonwilds.
 
 export default function SettingsPage() {
   const { t } = useTranslation();
+  const { theme, setTheme } = useTheme();
   const [s, setS] = useState(null);
   const [steam, setSteam] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -166,12 +168,13 @@ export default function SettingsPage() {
       <div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
         <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>{t("settings.appearance")}</h3>
         <label className="label">{t("settings.theme")}</label>
-        <div className="panel-inset" style={{ padding: "0.8rem 0.9rem", display: "flex", alignItems: "center", gap: "0.7rem", borderColor: "var(--line-strong)" }}>
-          <Icon name="moon" />
-          <div>
-            <div style={{ fontWeight: 850 }}>RSDW Dark</div>
-            <div className="subtle" style={{ fontSize: "0.75rem", fontWeight: 600 }}>Matte black surfaces with muted gold borders and controls.</div>
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(205px, 1fr))", gap: 10 }}>
+          {APP_THEMES.map((option) => <button key={option.id} type="button" className="panel-inset" aria-pressed={theme === option.id} disabled={saving} onClick={() => { setTheme(option.id); void save({ theme: option.id }); }}
+            style={{ padding: ".85rem", display: "flex", gap: 11, alignItems: "center", textAlign: "left", cursor: "pointer", color: "var(--ink)", borderColor: theme === option.id ? "var(--accent)" : "var(--line)" }}>
+            <span aria-hidden style={{ width: 27, height: 27, borderRadius: "50%", background: option.swatch, boxShadow: "0 0 0 3px var(--card-2)", flexShrink: 0 }} />
+            <span><strong style={{ fontSize: ".82rem" }}>{option.name}</strong><span className="subtle" style={{ display: "block", fontSize: ".7rem", marginTop: 3 }}>{option.description}</span></span>
+            {theme === option.id && <Icon name="check" size={15} />}
+          </button>)}
         </div>
       </div>
       )}

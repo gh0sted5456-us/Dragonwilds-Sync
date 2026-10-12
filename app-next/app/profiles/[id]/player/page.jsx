@@ -4,6 +4,8 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, Icon, toast } from "@/components/ui";
 import ProfileSavesPanel from "@/components/ProfileSavesPanel";
+import ClientSyncJourney from "@/components/ClientSyncJourney";
+import { useJobsPoll } from "@/components/jobsClient";
 
 export default function PlayerProfile({ params }) {
   const searchParams = useSearchParams();
@@ -15,11 +17,15 @@ export default function PlayerProfile({ params }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
   const [flowStep, setFlowStep] = useState(null);
+  const [flowStage, setFlowStage] = useState(null);
+  const [flowError, setFlowError] = useState(null);
+  const [skipDownload, setSkipDownload] = useState(false);
   const [launchReady, setLaunchReady] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [credentialOpen, setCredentialOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [preparedLinks, setPreparedLinks] = useState(0);
+  const jobs = useJobsPoll();
   useEffect(() => {
     Promise.all([api(`/api/profiles/${params.id}`), api("/api/application-setup/play")]).then(([profileResponse, installsResponse]) => {
       setProfile(profileResponse.profile);
@@ -40,36 +46,48 @@ export default function PlayerProfile({ params }) {
   };
 
   const requestAdmission = async () => {
+    setFlowStage("ack");
     setFlowStep("Submitting verified client manifest to World…");
     const response = await api(`/api/profiles/${params.id}/admit`, { method: "POST", body: {} });
     await refreshProfile();
     setLaunchReady(true);
+    setFlowStage("ready");
     setFlowStep("Server approved this manifest. Ready to enter.");
     return response.admission;
   };
 
   const connect = async () => {
-    setChecking(true); setResult(null);
+    setChecking(true); setResult(null); setLaunchReady(false); setFlowError(null); setSkipDownload(false);
+    setFlowStage("auth"); setFlowStep("Authenticating and downloading the World manifest…");
     try {
       const response = await api(`/api/profiles/${params.id}/verify`, { method: "POST", body: {} });
+      setFlowStage("compare"); setFlowStep("Comparing the World manifest with your managed files…");
       setResult({ ...response.comparison, prerequisites: response.manifest.prerequisites });
       await refreshProfile();
-      if (response.comparison.current) await requestAdmission();
+      if (response.comparison.current) {
+        setSkipDownload(true); setFlowStage("verify");
+        await requestAdmission();
+      } else {
+        setFlowStage("download"); setFlowStep(`${response.comparison.changes.length} file(s) need syncing. Choose Resync Mods to continue.`);
+      }
       toast(response.comparison.current ? "Connected — your managed mods match this World." : `${response.comparison.changes.length} mod file(s) need synchronization.`, response.comparison.current ? "success" : "info");
-    } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
+    } catch (e) { setFlowStage(null); setFlowError(e.message); toast(e.message, "error"); } finally { setChecking(false); }
   };
   const sync = async () => {
-    setChecking(true);
+    setChecking(true); setLaunchReady(false); setFlowError(null); setSkipDownload(false);
+    setFlowStage("auth"); setFlowStep("Connecting to the World and preparing managed downloads…");
     try {
       const request = api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
       setTimeout(() => { try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {} }, 250);
       const response = await request;
       const { installed, removed, manifest } = response.result;
+      if (installed.length === 0) setSkipDownload(true);
       setResult({ current: true, changes: [], units: summarizeUnits(manifest), transport: manifest.transport, prerequisites: manifest.prerequisites });
+      setFlowStage("verify"); setFlowStep("Downloaded files and the World profile have been verified.");
       await refreshProfile();
       await requestAdmission();
       toast(`World synchronized: ${installed.length} installed or updated, ${removed.length} removed.`, "success");
-    } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
+    } catch (e) { setFlowStage(null); setFlowError(e.message); toast(e.message, "error"); } finally { setChecking(false); }
   };
   const setService = async (service) => {
     try {
@@ -78,6 +96,7 @@ export default function PlayerProfile({ params }) {
       await refreshProfile();
       setLocations({ installDir: response.installation.installDir || "", executablePath: response.installation.executablePath || "", savePath: response.installation.savePath || "" });
       setResult(null);
+      setLaunchReady(false); setFlowStage(null); setFlowError(null);
       toast(`${response.installation.label} identified for this World.`, "success");
     } catch (e) { toast(e.message, "error"); }
   };
@@ -86,18 +105,20 @@ export default function PlayerProfile({ params }) {
       const response = await api("/api/client-service", { method: "POST", body: { profileId: params.id, installDir: locations.installDir, executablePath: locations.executablePath, savePath: locations.savePath, persist: true } });
       await refreshProfile();
       setLocations({ installDir: response.installation.installDir || "", executablePath: response.installation.executablePath || "", savePath: response.installation.savePath || "" });
+      setResult(null); setLaunchReady(false); setFlowStage(null); setFlowError(null);
       toast(`Detected ${response.installation.label} from the selected paths.`, "success");
     } catch (e) { toast(e.message, "error"); }
   };
   const join = async () => {
     if (!result?.current) return toast("Connect and synchronize this World before joining.", "error");
     try {
+      setFlowError(null);
       await requestAdmission();
       const activated = await api(`/api/profiles/${params.id}/activate`, { method: "POST", body: {} });
       const linked = Number(activated.activation?.deployment?.hardlink || 0) + Number(activated.activation?.deployment?.symlink || 0);
       setPreparedLinks(linked);
       setCredentialOpen(true);
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e) { setFlowError(e.message); toast(e.message, "error"); }
   };
   const launchGame = async () => {
     const service = profile.connection?.service || (profile.connection?.platform === "gamepass" ? "gamepass" : "steam");
@@ -160,22 +181,29 @@ export default function PlayerProfile({ params }) {
     (async () => {
       setChecking(true);
       setLaunchReady(false);
+      setFlowError(null); setFlowStage("auth"); setSkipDownload(false);
       try {
         setFlowStep("Authenticating with World…");
         const verified = await api(`/api/profiles/${params.id}/verify`, { method: "POST", body: {} });
         setResult({ ...verified.comparison, prerequisites: verified.manifest.prerequisites });
+        setFlowStage("compare");
         await refreshProfile();
         if (!verified.comparison.current) {
+          setFlowStage("download");
           setFlowStep(`Synchronizing ${verified.comparison.changes.length} managed file(s)…`);
           const request = api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
           setTimeout(() => { try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {} }, 250);
           const synced = await request;
+          if (synced.result.installed.length === 0) setSkipDownload(true);
           setResult({ current: true, changes: [], units: summarizeUnits(synced.result.manifest), transport: synced.result.manifest.transport, prerequisites: synced.result.manifest.prerequisites });
+          setFlowStage("verify");
           await refreshProfile();
-        }
+        } else { setSkipDownload(true); setFlowStage("verify"); }
         await requestAdmission();
       } catch (e) {
         setFlowStep("Connection could not be completed.");
+        setFlowStage(null);
+        setFlowError(e.message);
         toast(e.message, "error");
       } finally {
         setChecking(false);
@@ -186,6 +214,7 @@ export default function PlayerProfile({ params }) {
   if (!profile) return <main style={{ padding: 32 }}>Loading World profile…</main>;
   const selectedService = profile.connection?.service || (profile.connection?.platform === "gamepass" ? "gamepass" : "steam");
   const selectedInstall = profile.client_install || playLanes[selectedService];
+  const syncJob = checking ? jobs.find((job) => job.type === "sync" && job.worldId === params.id && job.status === "running") : null;
   const identity = profile.connection?.worldIdentity || {};
   return <main style={{ maxWidth: 820, margin: "0 auto", padding: 32 }}>
     <Link href="/?mode=player" className="page-back"><Icon name="back" /> Back to World Management</Link>
@@ -198,10 +227,11 @@ export default function PlayerProfile({ params }) {
       </div>
     </div>
     <p className="subtle">{profile.connection?.localWorld ? "This local World profile activates its assigned save and profile-owned files before opening Dragonwilds." : "Connect to authenticate and compare this World's declared files. Once synchronized, Join opens Dragonwilds through your selected platform."}</p>
-    {autoplay && <div className="panel" style={{ padding: 16, marginTop: 18, borderColor: launchReady ? "var(--accent)" : "var(--line-strong)" }}>
-      <strong>{flowStep || "Preparing World connection…"}</strong>
+    {!profile.connection?.localWorld && <div className="panel" style={{ padding: 16, marginTop: 18, borderColor: launchReady ? "var(--accent)" : "var(--line-strong)" }}>
+      <strong>World connection</strong>
+      <div style={{ marginTop: 12 }}><ClientSyncJourney stage={flowStage} job={syncJob} message={flowStep} error={flowError} skipDownload={skipDownload} /></div>
       <div className="subtle" style={{ marginTop: 5 }}>
-        Desktop launch checks authentication and managed files first. Dragonwilds only opens after this confirmation.
+        Dragonwilds opens only after the server acknowledges your verified mod manifest.
       </div>
       {launchReady && <>
         <div className="panel-inset" style={{ marginTop: 14, padding: 12, display: "grid", gap: 8 }}>

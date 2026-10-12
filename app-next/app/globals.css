@@ -70,6 +70,8 @@ body {
 .desktop-shell { min-height: 100vh; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 .app-frame { display: flex; min-height: 0; height: 100%; flex: 1; overflow: hidden; }
 .desktop-titlebar {
+  position: relative;
+  z-index: 100;
   height: 46px;
   flex: 0 0 46px;
   display: flex;
@@ -86,6 +88,10 @@ body {
   user-select: none;
   -webkit-app-region: drag;
 }
+/* Electron's native caption buttons occupy this top strip. A full-screen
+   editor must fill the content area, not cover the draggable title bar. */
+.ini-editor-overlay { top: 0; }
+.desktop-shell:has(> .desktop-titlebar) .ini-editor-overlay { top: 46px; }
 .desktop-titlebar img { width: 25px; height: 25px; object-fit: contain; }
 .desktop-titlebar-product { color: var(--ink); }
 .desktop-titlebar-separator { color: var(--line-strong); font-weight: 500; }

@@ -16,7 +16,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const root = process.cwd();
-const standalone = path.join(root, ".next", "standalone");
+const nextDistDir = process.env.RSDW_NEXT_DIST_DIR || ".next";
+const standalone = path.join(root, nextDistDir, "standalone");
 const out = path.join(root, "dist-standalone");
 
 function rmrf(p) { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); }
@@ -34,7 +35,7 @@ function copyDir(src, dst) {
 }
 
 if (!fs.existsSync(standalone)) {
-  console.error("ERROR: .next/standalone not found. Run `next build` (output:'standalone') first.");
+  console.error(`ERROR: ${nextDistDir}/standalone not found. Run \`next build\` (output:'standalone') first.`);
   process.exit(1);
 }
 
@@ -55,7 +56,7 @@ for (const junk of [".data", "release", "dist-standalone"]) {
 }
 
 // 2. copy client static assets into .next/static (standalone does NOT include these)
-copyDir(path.join(root, ".next", "static"), path.join(out, ".next", "static"));
+copyDir(path.join(root, nextDistDir, "static"), path.join(out, nextDistDir, "static"));
 
 // 3. copy public/ (icons etc.)
 copyDir(path.join(root, "public"), path.join(out, "public"));

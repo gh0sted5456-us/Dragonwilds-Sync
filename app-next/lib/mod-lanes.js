@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const dbm = require("./db");
 const steamlib = require("./steamlibrary");
+const loaderMods = require("./loader-mods");
 const { trashPath } = require("./trash");
 
 const LANES = ["server", "required", "steam", "gamepass"];
@@ -130,7 +131,7 @@ function selectedMods(worldId, { clientRequiredOnly = true } = {}) {
   const snapshot = status(worldId);
   const wanted = new Map(snapshot.modSelections.map((item) => [item.key, item]));
   return snapshot.modLanes.flatMap((lane) => lane.mods
-    .filter((mod) => wanted.has(mod.selectionKey) && mod.syncEligible)
+    .filter((mod) => wanted.has(mod.selectionKey) && mod.syncEligible && mod.loaderEnabled !== false && !mod.loaderBlockedByFramework)
     .map((mod) => ({ ...mod, scope: wanted.get(mod.selectionKey).scope, clientRequired: wanted.get(mod.selectionKey).scope !== "server" })))
     .filter((mod) => !clientRequiredOnly || mod.clientRequired);
 }
@@ -170,7 +171,13 @@ function setSelections(worldId, requested) {
     const selection = selections.find((item) => item.key === key);
     if (mod.lane === "server" || selection.scope === "client") continue;
     const destination = destinationFor(world.install_dir, mod, worldId);
-    if (destination) copied.push(...copyMod(mod, destination));
+    if (destination) {
+      copied.push(...copyMod(mod, destination));
+      if (["ue4ss", "runeschema"].includes(mod.type) && mod.loaderEnabled !== null) {
+        const modsDir = mod.type === "ue4ss" ? path.dirname(destination) : path.dirname(path.dirname(path.dirname(destination)));
+        loaderMods.setEnabled(modsDir, mod.type, mod.loaderEntryName, destination, mod.loaderEnabled);
+      }
+    }
   }
   const retained = new Set(copied.map((value) => path.resolve(value).toLowerCase()));
   for (const oldTarget of previous) if (!retained.has(path.resolve(oldTarget).toLowerCase()) && fs.existsSync(oldTarget)) trashPath(oldTarget);
@@ -179,6 +186,31 @@ function setSelections(worldId, requested) {
   const clientCount = selections.filter((item) => item.scope !== "server").length;
   const serverCount = selections.filter((item) => item.scope !== "client").length;
   dbm.logEvent(worldId, "mod", `Saved ${keys.length} managed mod folder${keys.length === 1 ? "" : "s"}; ${clientCount} client / ${serverCount} server`);
+  return status(worldId);
+}
+
+function setLoaderEnabled(worldId, lane, key, enabled) {
+  if (!LANES.includes(lane)) throw new Error("Unknown mod lane");
+  if (typeof enabled !== "boolean") throw new Error("Enabled must be true or false");
+  const snapshot = status(worldId);
+  const item = snapshot.modLanes.find((row) => row.id === lane)?.mods.find((mod) => mod.selectionKey === key);
+  if (!item || !["ue4ss", "runeschema", "framework"].includes(item.type)) throw new Error("Mod is not a detected loader-managed mod");
+  const kind = item.type === "framework" ? "ue4ss" : item.type;
+  const modsDir = kind === "ue4ss" ? path.dirname(item.path) : path.dirname(path.dirname(path.dirname(item.path)));
+  const name = item.loaderEntryName;
+  loaderMods.setEnabled(modsDir, kind, name, item.path, enabled);
+  const selection = snapshot.modSelections.find((row) => row.key === key);
+  if (lane !== "server" && selection && selection.scope !== "client" && item.syncEligible) {
+    const serverRoot = roots(worldId).server;
+    if (serverRoot) {
+      const destination = destinationFor(serverRoot, item, worldId);
+      if (destination && fs.existsSync(destination)) {
+        const targetModsDir = kind === "ue4ss" ? path.dirname(destination) : path.dirname(path.dirname(path.dirname(destination)));
+        loaderMods.setEnabled(targetModsDir, kind, name, destination, enabled);
+      }
+    }
+  }
+  dbm.logEvent(worldId, "mod", `${enabled ? "Enabled" : "Disabled"} ${item.name} in ${lane} ${kind} loader list`);
   return status(worldId);
 }
 
@@ -320,4 +352,4 @@ function writeEditableFile(worldId, lane, relative, content, expectedEtag) {
   return readEditableFile(worldId, lane, relative);
 }
 
-module.exports = { status, setSelections, selectedMods, browse, readEditableFile, writeEditableFile, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };
+module.exports = { status, setSelections, setLoaderEnabled, selectedMods, browse, readEditableFile, writeEditableFile, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };

@@ -149,6 +149,18 @@ export default function ModsPanel({ worldId, running }) {
     await saveSelections([...next.values()]);
   }
 
+  async function toggleLoader(mod) {
+    if (running || busy) return;
+    setBusy(true);
+    try {
+      const enabled = mod.loaderEnabled !== true;
+      const result = await api(`/api/worlds/${worldId}/mods`, { method: "PUT", body: { lane: mod.lane, selectionKey: mod.selectionKey, enabled } });
+      setData((current) => ({ ...current, ...result }));
+      toast(`${mod.name} ${enabled ? "enabled" : "disabled"} in its loader list. Restart the game or server to apply it.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
+
   async function saveSelections(next) {
     setBusy(true);
     try {
@@ -246,7 +258,7 @@ export default function ModsPanel({ worldId, running }) {
           </div>
         </div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
-          Select a discovered mod, then choose where it belongs: Client, Server, or Both. Client files are published in the downloadable manifest; Server files are materialized on the host. Existing selections migrate to Both automatically.
+          Enable or disable UE4SS and RuneSchema mods in their loader lists. Manage mod is separate: choose Client, Server, or Both for synchronization. Disabled loader mods are not published in the downloadable manifest. Restart the game or server after changing loader state.
         </p>
         <div className="panel-inset" style={{ padding: ".8rem", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 220 }}><strong>PAK destination</strong><div className="subtle" style={{ fontSize: ".7rem" }}>Choose classic <code>Content/Paks/~mods</code>, or let RuneSchema load each triplet from <code>RuneSchema/mods/&lt;ModID&gt;/paks</code>.</div></div>
@@ -289,7 +301,7 @@ export default function ModsPanel({ worldId, running }) {
               return <div key={type}>
                 <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
                 <div style={{ display: "grid", gap: 5 }}>
-                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} update={updates[mod.selectionKey]} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onScope={(scope) => setScope(mod, scope)} onExplore={() => browse(relativeModPath(lane.root, mod.path))} onView={() => viewProvider(mod)} onDownload={() => downloadProvider(mod)} />)}
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} update={updates[mod.selectionKey]} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onLoaderToggle={() => toggleLoader(mod)} onScope={(scope) => setScope(mod, scope)} onExplore={() => browse(relativeModPath(lane.root, mod.path))} onView={() => viewProvider(mod)} onDownload={() => downloadProvider(mod)} />)}
                 </div>
               </div>;
             })}
@@ -304,7 +316,7 @@ export default function ModsPanel({ worldId, running }) {
   );
 }
 
-function ModFolder({ mod, update, selection, busy, onToggle, onScope, onExplore, onView, onDownload }) {
+function ModFolder({ mod, update, selection, busy, onToggle, onLoaderToggle, onScope, onExplore, onView, onDownload }) {
   const selected = !!selection;
   const scope = selection?.scope || "both";
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -321,18 +333,23 @@ function ModFolder({ mod, update, selection, busy, onToggle, onScope, onExplore,
         <span className="chip">{mod.identity.runtimeRole.toUpperCase()}</span><span className="chip">HOTLOAD {mod.identity.hotload ? "YES" : "NO"}</span>
       </div>}
       <div className="subtle" style={{ fontSize: "0.67rem", wordBreak: "break-all" }}>{mod.path}</div>
+      {mod.loaderListFile && <div className="subtle" style={{ fontSize: "0.67rem" }}>Loader: {mod.loaderEnabled === true ? "Enabled" : mod.loaderEnabled === false ? "Disabled" : "Not listed"} · {mod.loaderStateSource}</div>}
+      {mod.loaderBlockedByFramework && <div className="subtle" style={{ fontSize: "0.67rem", color: "var(--yellow)" }}>RuneSchema framework is disabled in UE4SS.</div>}
     </div>
-    {mod.syncEligible
-      ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button className="btn btn-subtle" onClick={onExplore}><Icon name="file" size={14} /> Code</button>
-          {mod.identity?.projectUrl && <button className="btn btn-subtle" title="Open the linked mod project in your default browser" onClick={onView}><Icon name="upload" size={14} /> View mod</button>}
-          {mod.identity?.projectUrl && update?.updateAvailable && <button className="btn btn-primary" title={update?.reason || "Download the available update into this profile"} onClick={onDownload}><Icon name="download" size={14} /> Download update</button>}
-          {selected && <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
-            {["client", "server", "both"].map((value) => <button key={value} className={`btn ${scope === value ? "btn-primary" : "btn-subtle"}`} style={{ padding: ".35rem .55rem" }} disabled={busy} onClick={() => onScope(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
-          </div>}
-          <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Remove" : "Manage mod"}</button>
-        </div>
-      : <span className="chip">Detected only</span>}
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {mod.loaderListFile && <button className={`btn ${mod.loaderEnabled === true ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onLoaderToggle}>{mod.loaderEnabled === true ? "Disable" : "Enable"}</button>}
+      {mod.syncEligible
+        ? <>
+            <button className="btn btn-subtle" onClick={onExplore}><Icon name="file" size={14} /> Code</button>
+            {mod.identity?.projectUrl && <button className="btn btn-subtle" title="Open the linked mod project in your default browser" onClick={onView}><Icon name="upload" size={14} /> View mod</button>}
+            {mod.identity?.projectUrl && update?.updateAvailable && <button className="btn btn-primary" title={update?.reason || "Download the available update into this profile"} onClick={onDownload}><Icon name="download" size={14} /> Download update</button>}
+            {selected && <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
+              {["client", "server", "both"].map((value) => <button key={value} className={`btn ${scope === value ? "btn-primary" : "btn-subtle"}`} style={{ padding: ".35rem .55rem" }} disabled={busy} onClick={() => onScope(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+            </div>}
+            <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Remove" : "Manage mod"}</button>
+          </>
+        : <span className="chip">Detected runtime</span>}
+    </div>
   </div>;
 }
 

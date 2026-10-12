@@ -22,6 +22,10 @@ function ServerSetup() {
   const [state, setState] = useState(null);
   const [dir, setDir] = useState("");
   const [platform, setPlatform] = useState("windows");
+  const [defaultOwnerId, setDefaultOwnerId] = useState("");
+  const [ownerBusy, setOwnerBusy] = useState(false);
+  const [profileRoot, setProfileRoot] = useState("");
+  const [rootBusy, setRootBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [jobId, setJobId] = useState(null);
   const jobs = useJobsPoll();
@@ -31,6 +35,8 @@ function ServerSetup() {
     setState(r.server);
     if (r.server?.installDir) setDir(r.server.installDir);
     if (r.server?.platform) setPlatform(r.server.platform);
+    setDefaultOwnerId(r.server?.defaultOwnerId || "");
+    setProfileRoot(r.server?.profileRoot || "");
   }).catch((e) => toast(e.message, "error"));
   useEffect(() => {
     if (window.desktop?.platform && !state?.platform) {
@@ -46,6 +52,26 @@ function ServerSetup() {
     const selected = await window.desktop?.pickDirectory?.();
     if (selected) setDir(selected);
   };
+  const saveOwnerId = async () => {
+    setOwnerBusy(true);
+    try {
+      const result = await api("/api/application-setup/server", { method: "PATCH", body: { defaultOwnerId } });
+      setState(result.server);
+      setDefaultOwnerId(result.server.defaultOwnerId);
+      toast("Default Owner ID saved for new Server profiles.", "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setOwnerBusy(false); }
+  };
+  const saveProfileRoot = async () => {
+    setRootBusy(true);
+    try {
+      const result = await api("/api/application-setup/server", { method: "PATCH", body: { profileRoot } });
+      setState(result.server);
+      setProfileRoot(result.server.profileRoot);
+      toast("Private Server profiles folder saved.", "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setRootBusy(false); }
+  };
   const adopt = async () => {
     const executablePath = await window.desktop?.pickServerExecutable?.();
     if (!executablePath) return;
@@ -55,6 +81,7 @@ function ServerSetup() {
       setState(result.server);
       setDir(result.server.installDir || "");
       setPlatform(result.server.platform || platform);
+      setProfileRoot(result.server.profileRoot || "");
       toast("Existing dedicated server verified and linked.", "success");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }
@@ -78,6 +105,23 @@ function ServerSetup() {
       Link an existing <code>RSDragonwildsServer.exe</code>, or let RSDW install and validate the shared dedicated-server lane through SteamCMD.
     </p>
     <SetupState ready={state?.ready} text={state?.ready ? `Ready · build ${state.buildId || "unknown"}` : "Not configured"} />
+    <div className="panel-inset" style={{ margin: "12px 0", padding: ".8rem" }}>
+      <label className="label" htmlFor="default-server-owner-id">Default Owner ID</label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input id="default-server-owner-id" className="input" style={{ flex: "1 1 240px" }} value={defaultOwnerId} onChange={(e) => setDefaultOwnerId(e.target.value)} placeholder="Your Dragonwilds Player ID" />
+        <button className="btn btn-primary" disabled={ownerBusy} onClick={saveOwnerId}>Save Owner ID</button>
+      </div>
+      <p className="subtle" style={{ margin: "6px 0 0", fontSize: ".74rem" }}>New Server profiles inherit this ID. Existing profiles keep their own Owner ID; each profile can override it in Server settings.</p>
+    </div>
+    <div className="panel-inset" style={{ margin: "12px 0", padding: ".8rem" }}>
+      <label className="label" htmlFor="server-profile-root">Private Server profiles folder</label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input id="server-profile-root" className="input" style={{ flex: "1 1 240px" }} value={profileRoot} onChange={(e) => setProfileRoot(e.target.value)} placeholder="Choose a folder beside the shared Server lane" />
+        <button className="btn btn-ghost" onClick={async () => { const selected = await window.desktop?.pickDirectory?.(); if (selected) setProfileRoot(selected); }}><Icon name="folder" /> Browse</button>
+        <button className="btn btn-primary" disabled={rootBusy || !state?.installDir} onClick={saveProfileRoot}>Save Folder</button>
+      </div>
+      <p className="subtle" style={{ margin: "6px 0 0", fontSize: ".74rem" }}>Each new Server receives its own executable, mods, configuration, and saves. The shared SteamCMD lane is used only as a template.</p>
+    </div>
     {state?.binary && <p className="subtle" style={{ fontFamily: "var(--font-mono)", fontSize: ".72rem", wordBreak: "break-all" }}>{state.binary}</p>}
     <div className="panel-inset" style={{ margin: "12px 0", padding: ".8rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 220 }}>

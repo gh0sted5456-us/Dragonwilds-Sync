@@ -162,6 +162,7 @@ const PHASE_LABELS = {
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
   redist: "Installing prerequisites", runtime: "Installing mod loader",
+  copy: "Forking private server files",
   catalog: "Refreshing game registry", scan: "Inspecting saves", cleanup: "Cleaning saves",
 };
 function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }

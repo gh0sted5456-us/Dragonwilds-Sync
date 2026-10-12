@@ -21,6 +21,7 @@
     "test:mods": "node scripts/check-mod-sync-source.js",
     "test:profiles": "node scripts/check-client-profile-cache.js",
     "test:launcher-profiles": "node scripts/check-launcher-profiles.js",
+    "test:server-forks": "node scripts/check-server-forks.js",
     "test:client-service": "node scripts/check-client-service.js",
     "test:socials": "node scripts/check-social-mods.js",
     "test:discord": "node scripts/check-discord-community.js",

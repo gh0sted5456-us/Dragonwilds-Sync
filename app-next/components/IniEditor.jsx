@@ -180,11 +180,12 @@ export default function IniEditor({ world, running, onClose }) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)", display: "grid", placeItems: "center", zIndex: 60, padding: 0 }}
+      className="ini-editor-overlay"
+      style={{ position: "fixed", right: 0, bottom: 0, left: 0, background: "rgba(0,0,0,0.62)", display: "grid", placeItems: "center", zIndex: 60, padding: 0 }}
       onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) requestClose(); }}
     >
-      <div className="panel" style={{ width: "100vw", height: "100vh", maxWidth: "none", borderRadius: 0, display: "flex", flexDirection: "column", padding: "1.1rem", gap: "0.9rem" }}>
+      <div className="panel" style={{ width: "100%", height: "100%", maxWidth: "none", borderRadius: 0, display: "flex", flexDirection: "column", padding: "1.1rem", gap: "0.9rem" }}>
         {/* Header: world name / status / path */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", flexWrap: "wrap" }}>
           <Icon name="settings" size={18} />

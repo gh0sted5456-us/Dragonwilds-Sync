@@ -1,9 +1,8 @@
 const assert = require("assert");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
-const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "rsdw-mod-source-"));
+const sandbox = fs.mkdtempSync(path.join(path.resolve(__dirname, ".."), ".rsdw-mod-source-"));
 process.env.APP_MANAGER_DATA_DIR = path.join(sandbox, "data");
 
 const dbm = require("../lib/db");
@@ -32,6 +31,11 @@ try {
   const ue4ssFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "ExampleUE4SS");
   const runeFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "ExampleSchema");
   fs.mkdirSync(ue4ssFolder, { recursive: true }); fs.mkdirSync(runeFolder, { recursive: true });
+  const ue4ssList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "mods.txt");
+  const runeList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "runeschema.txt");
+  fs.writeFileSync(ue4ssList, "; Keep custom entries and load order\r\nExampleUE4SS : 0\r\n\r\n; Built-in keybinds, do not move up!\r\nKeybinds : 1\r\n");
+  fs.writeFileSync(runeList, "# RuneSchema addon list\nExampleSchema : 1\n");
+  fs.writeFileSync(path.join(ue4ssFolder, "enabled.txt"), "");
   fs.writeFileSync(path.join(ue4ssFolder, "ID.txt"), "ModID: UEExample\nName: UE Example\nRuntimeRole: server\nHOTLOAD=YES\n");
   fs.writeFileSync(path.join(runeFolder, "ID.txt"), "ModID: RuneExample\nName: Rune Example\nRuntimeRole: client\nHOTLOAD=NO\n");
   fs.writeFileSync(path.join(ue4ssFolder, "config.json"), '{"enabled":true}\n');
@@ -82,6 +86,46 @@ try {
   assert(providers.compareVersions("1.2.3", "1.3.0") < 0, "Version comparison did not identify an update");
   assert.equal(inventory.find((item) => item.modId === "UEExample")?.identity?.hotload, true, "UE4SS ID.txt was not read");
   assert.equal(inventory.find((item) => item.modId === "RuneExample")?.identity?.runtimeRole, "client", "RuneSchema ID.txt was not read");
+  const ue4ssMod = required.mods.find((item) => item.folderName === "ExampleUE4SS");
+  const runeMod = required.mods.find((item) => item.folderName === "ExampleSchema");
+  const runeFramework = required.mods.find((item) => item.type === "framework" && item.folderName === "RuneSchema");
+  assert.equal(ue4ssMod?.loaderEnabled, true, "UE4SS enabled.txt marker was not detected");
+  assert.equal(runeMod?.loaderEnabled, true, "RuneSchema list state was not detected");
+  lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, false);
+  assert.equal(fs.existsSync(path.join(ue4ssFolder, "enabled.txt")), false, "UE4SS marker still bypasses the disabled list entry");
+  assert(fs.existsSync(path.join(ue4ssFolder, "enabled.txt.rsdw-disabled")), "UE4SS marker was not preserved for re-enabling");
+  assert.match(fs.readFileSync(ue4ssList, "utf8"), /ExampleUE4SS : 0/);
+  assert.match(fs.readFileSync(ue4ssList, "utf8"), /; Built-in keybinds, do not move up!\r\nKeybinds : 1/);
+  lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, true);
+  assert(fs.existsSync(path.join(ue4ssFolder, "enabled.txt")), "UE4SS marker was not restored");
+  assert.match(fs.readFileSync(ue4ssList, "utf8"), /ExampleUE4SS : 1/);
+  lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, false);
+  assert.match(fs.readFileSync(runeList, "utf8"), /ExampleSchema : 0/);
+  lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, true);
+  assert.match(fs.readFileSync(runeList, "utf8"), /ExampleSchema : 1/);
+  lanes.setLoaderEnabled(worldId, "required", runeFramework.selectionKey, true);
+  assert.match(fs.readFileSync(ue4ssList, "utf8"), /RuneSchema : 1\r\n(?:\r\n)?; Built-in keybinds/, "RuneSchema framework was not inserted before UE4SS keybinds");
+  assert.throws(() => lanes.setLoaderEnabled(worldId, "required", mod.selectionKey, true), /not a detected loader-managed mod/, "PAK was accepted as a loader-controlled mod");
+
+  lanes.setSelections(worldId, [{ key: ue4ssMod.selectionKey, scope: "both" }]);
+  const serverUe4ssList = path.join(server, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "mods.txt");
+  assert.match(fs.readFileSync(serverUe4ssList, "utf8"), /ExampleUE4SS : 1/, "Managed UE4SS state was not applied to the server");
+  lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, false);
+  assert.match(fs.readFileSync(serverUe4ssList, "utf8"), /ExampleUE4SS : 0/, "UE4SS disable was not applied to the server copy");
+  assert(!manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "UE Example"), "Disabled UE4SS mod was published to player Sync");
+  lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, true);
+  assert(manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "UE Example"), "Enabled UE4SS mod was not published to player Sync");
+  lanes.setSelections(worldId, [{ key: runeMod.selectionKey, scope: "both" }]);
+  const serverRuneList = path.join(server, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "runeschema.txt");
+  assert.match(fs.readFileSync(serverRuneList, "utf8"), /ExampleSchema : 1/, "Managed RuneSchema state was not applied to the server");
+  lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, false);
+  assert.match(fs.readFileSync(serverRuneList, "utf8"), /ExampleSchema : 0/, "RuneSchema disable was not applied to the server copy");
+  assert(!manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "Rune Example"), "Disabled RuneSchema mod was published to player Sync");
+  lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, true);
+  lanes.setLoaderEnabled(worldId, "required", runeFramework.selectionKey, false);
+  assert(lanes.status(worldId).modLanes.find((item) => item.id === "required").mods.find((item) => item.selectionKey === runeMod.selectionKey).loaderBlockedByFramework, "Disabled RuneSchema framework was not reflected on its addons");
+  assert(!manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "Rune Example"), "RuneSchema addon was published while its framework was disabled");
+  lanes.setLoaderEnabled(worldId, "required", runeFramework.selectionKey, true);
 
   const editorFolder = "RSDragonwilds/Binaries/Win64/ue4ss/Mods/ExampleUE4SS";
   const editorBrowser = lanes.browse(worldId, "required", editorFolder);

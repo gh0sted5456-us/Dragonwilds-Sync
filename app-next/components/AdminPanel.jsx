@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
+import { useJobsPoll, JobCard } from "@/components/jobsClient";
 
 function stripWrappingQuotes(value) {
   const text = value == null ? "" : String(value);
@@ -29,6 +30,25 @@ export default function AdminPanel({ world, running, onChange }) {
   const [defaultWorldName, setDefaultWorldName] = useState(world.default_world_name || "");
   // No-op: touch file for dependency tracking.
   const [movingDir, setMovingDir] = useState(false);
+  const [sharedInstall, setSharedInstall] = useState(false);
+  const [forkJobId, setForkJobId] = useState(null);
+  const forkJobs = useJobsPoll();
+  const forkJob = forkJobs.find((job) => job.id === forkJobId);
+  const forkNotified = useRef(false);
+  useEffect(() => {
+    api("/api/application-setup/server").then((r) => {
+      const shared = String(r.server?.installDir || "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+      const local = String(world.install_dir || "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+      setSharedInstall(!!shared && shared === local);
+    }).catch(() => {});
+  }, [world.install_dir]);
+  useEffect(() => {
+    if (forkJob?.status !== "success" || forkNotified.current) return;
+    forkNotified.current = true;
+    setSharedInstall(false);
+    toast("Server files forked. The original shared folder is untouched.", "success");
+    onChange();
+  }, [forkJob?.status, onChange]);
   const [ports, setPorts] = useState({ game_port: world.game_port, query_port: world.query_port, rest_api_port: world.rest_api_port });
   const [savingPorts, setSavingPorts] = useState(false);
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
@@ -61,6 +81,16 @@ export default function AdminPanel({ world, running, onChange }) {
       onChange();
     } catch (e) { toast(e.message, "error"); }
     finally { setMovingDir(false); }
+  };
+
+  const forkSharedInstall = async () => {
+    try {
+      const result = await api(`/api/worlds/${world.world_id}/fork`, { method: "POST" });
+      forkNotified.current = false;
+      setForkJobId(result.jobId);
+      try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
+      toast("Copying current Server files to a private profile folder. Follow it in Downloads.", "success");
+    } catch (e) { toast(e.message, "error"); }
   };
 
   const saveProfile = async () => {
@@ -203,6 +233,12 @@ export default function AdminPanel({ world, running, onChange }) {
           </button>
         </div>
         {running && <p className="subtle" style={{ fontWeight: 700, fontSize: "0.74rem", marginTop: 4 }}>{t("admin.stopToChangeFolder")}</p>}
+        {sharedInstall && <div className="panel-inset" style={{ marginTop: 12, padding: ".9rem" }}>
+          <strong>This profile still uses the shared Server folder.</strong>
+          <p className="subtle" style={{ fontSize: ".76rem", margin: "6px 0 10px" }}>When this is the active profile and all Servers are stopped, copy the current on-disk save and server files into its own folder. The original files stay in place. Check that the current save belongs to this profile before migrating.</p>
+          <button className="btn btn-primary" disabled={running || forkJob?.status === "running"} onClick={forkSharedInstall}><Icon name="folder" /> Fork this Server's files</button>
+        </div>}
+        {forkJob && <div style={{ marginTop: 10 }}><JobCard job={forkJob} defaultShowLog /></div>}
       </section>
 
       <section>

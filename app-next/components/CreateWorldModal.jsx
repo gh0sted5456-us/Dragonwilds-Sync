@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
+import { useJobsPoll, JobCard } from "@/components/jobsClient";
 
 export default function CreateWorldModal({ onClose, onDone }) {
   return (
@@ -25,10 +26,23 @@ function CreateProfile({ onClose, onDone }) {
   const [server, setServer] = useState(null);
   const [name, setName] = useState(t("create.defaultWorldName"));
   const [ownerId, setOwnerId] = useState("");
+  const [overrideOwner, setOverrideOwner] = useState(false);
   const [defaultWorldName, setDefaultWorldName] = useState("");
   const [ports, setPorts] = usePorts();
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [jobId, setJobId] = useState(null);
+  const notified = useRef(false);
+  const jobs = useJobsPoll();
+  const forkJob = jobs.find((job) => job.id === jobId);
+
+  useEffect(() => {
+    if (forkJob?.status === "success" && !notified.current) {
+      notified.current = true;
+      toast("Private Server profile created.", "success");
+      onDone();
+    }
+  }, [forkJob?.status, onDone]);
 
   useEffect(() => {
     api("/api/application-setup/server").then((r) => setServer(r.server)).catch(() => setServer({ ready: false }));
@@ -36,17 +50,20 @@ function CreateProfile({ onClose, onDone }) {
 
   const create = async () => {
     if (!server?.ready) return toast("Run Application Setup → Server first.", "error");
+    if (saving || (jobId && forkJob?.status !== "error")) return;
+    notified.current = false;
     setSaving(true);
     try {
-      await api("/api/provision", { method: "POST", body: {
+      const result = await api("/api/provision", { method: "POST", body: {
         display_name: name,
         ports,
         admin_password: password || undefined,
-        owner_id: ownerId || undefined,
+        owner_id: overrideOwner || !server?.defaultOwnerId ? ownerId.trim() : undefined,
         default_world_name: defaultWorldName || undefined,
       }});
-      toast("Server profile created.", "success");
-      onDone();
+      setJobId(result.jobId);
+      try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
+      toast("Forking private Server files. Progress is also in Downloads.", "success");
     } catch (e) {
       toast(e.message, "error");
     } finally {
@@ -76,6 +93,7 @@ function CreateProfile({ onClose, onDone }) {
         <div className="subtle" style={{ marginTop: 3, fontSize: ".76rem", wordBreak: "break-all" }}>
           {server.installDir} · build {server.buildId || "unknown"}
         </div>
+        <div className="subtle" style={{ marginTop: 4, fontSize: ".76rem", wordBreak: "break-all" }}>New profiles get separate files under {server.profileRoot}</div>
       </div>
     )}
 
@@ -85,18 +103,20 @@ function CreateProfile({ onClose, onDone }) {
       <Field label={t("create.adminPassword")} hint={t("create.adminPasswordHint")}>
         <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
-      <Field label="OwnerId" hint="The owner's Player ID for this World profile.">
-        <input className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="e.g. 7656119..." />
+      <Field label="Owner ID" hint={server?.defaultOwnerId ? `Inherited from Application Setup: ${server.defaultOwnerId}` : "Set a default in Application Setup, or enter this profile's Owner ID here."}>
+        {server?.defaultOwnerId && <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><input type="checkbox" checked={overrideOwner} onChange={(e) => setOverrideOwner(e.target.checked)} /> Override for this Server</label>}
+        {(overrideOwner || !server?.defaultOwnerId) && <input className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Dragonwilds Player ID" />}
       </Field>
       <Field label="Default world name">
         <input className="input" value={defaultWorldName} onChange={(e) => setDefaultWorldName(e.target.value)} placeholder={t("create.defaultWorldName")} />
       </Field>
       <Actions>
         <button className="btn btn-ghost" onClick={onClose}>{t("common.cancel")}</button>
-        <button className="btn btn-primary" disabled={saving || !server?.ready} onClick={create}>
-          <Icon name="plus" /> {saving ? "Creating…" : "Create Profile"}
+        <button className="btn btn-primary" disabled={saving || (jobId && forkJob?.status !== "error") || !server?.ready} onClick={create}>
+          <Icon name="plus" /> {saving || forkJob?.status === "running" ? "Forking server files…" : "Create Profile"}
         </button>
       </Actions>
+      {forkJob && <JobCard job={forkJob} defaultShowLog />}
     </div>
   </div>;
 }

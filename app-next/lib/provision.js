@@ -13,16 +13,18 @@ const os = require("os");
 const { P } = require("./paths");
 
 // Create a world profile record (no install yet).
-function createProfile({ display_name, install_dir, ports, admin_password, platform, owner_id, default_world_name, wine_binary, wine_prefix, wine_launch_flags }) {
+function createProfile({ world_id, display_name, install_dir, ports, admin_password, platform, owner_id, default_world_name, wine_binary, wine_prefix, wine_launch_flags }) {
   const p = ports || suggestPorts();
+  const effectiveOwnerId = String(owner_id || dbm.getSetting("applicationSetup:ownerId", "") || "").trim();
+  if (!effectiveOwnerId) throw new Error("Set a default Owner ID in Application Setup → Dedicated Server, or enter an Owner ID override for this profile.");
   const plat = platform === "windows" || platform === "linux"
   ? platform
   : (os.platform() === "win32" ? "windows" : "linux");
   const world = {
-    world_id: crypto.randomUUID(),
+    world_id: world_id || crypto.randomUUID(),
     display_name: display_name || "New World",
     install_dir,
-    owner_id: owner_id || null,
+    owner_id: effectiveOwnerId,
     default_world_name: default_world_name || null,
     platform: plat,
     env_vars: "{}",

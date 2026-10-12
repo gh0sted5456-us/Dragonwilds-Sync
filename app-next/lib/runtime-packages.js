@@ -156,6 +156,15 @@ async function install(worldId, component, zipPath, onProgress = () => {}) {
 }
 const HOST_LEDGER_KEY = "applicationSetup:activeServerRuntimeFiles";
 
+function hostLedgerKey(world) {
+  // Legacy profiles may still share the machine-level server folder. Keep
+  // their swap ledger, but never let one private fork sweep another's files.
+  const shared = String(dbm.getSetting("applicationSetup:serverDir", "") || "");
+  return shared && path.resolve(world.install_dir).toLowerCase() === path.resolve(shared).toLowerCase()
+    ? HOST_LEDGER_KEY
+    : `serverRuntimeFiles:${world.world_id}`;
+}
+
 function materializeHost(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
@@ -172,7 +181,8 @@ function materializeHost(worldId) {
   }
 
   const wanted = new Set(desired.map((file) => file.relative.toLowerCase()));
-  const previous = dbm.getSetting(HOST_LEDGER_KEY, { files: [] }) || { files: [] };
+  const ledgerKey = hostLedgerKey(world);
+  const previous = dbm.getSetting(ledgerKey, { files: [] }) || { files: [] };
 
   // Remove only runtime files previously materialized by RSDW Sync. Unrelated
   // server files and user mods are never swept.
@@ -198,7 +208,7 @@ function materializeHost(worldId) {
     }
   }
 
-  dbm.setSetting(HOST_LEDGER_KEY, {
+  dbm.setSetting(ledgerKey, {
     worldId,
     files: desired.map((file) => file.relative),
     materializedAt: Date.now(),

@@ -307,6 +307,7 @@ function pakGroups(dir) {
 // A logical Pak mod is grouped by basename so its .pak/.utoc/.ucas companions are
 // shown as one entry. UE4SS and RuneSchema mods are folder-based.
 function scanGameMods(input) {
+  const loaderMods = require("./loader-mods");
   const installDir = normalizeGameInstall(input);
   if (!installDir) throw new Error("Choose the RuneScape: Dragonwilds Steam or PC Game Pass folder containing RSDragonwilds\\Binaries and RSDragonwilds\\Content.");
   const project = path.join(installDir, "RSDragonwilds");
@@ -323,25 +324,31 @@ function scanGameMods(input) {
   for (const platform of ["Win64", "WinGDK"]) {
     const winDir = path.join(project, "Binaries", platform);
     const ue4ssMods = path.join(winDir, "ue4ss", "Mods");
+    const ue4ssList = loaderMods.readControlList(ue4ssMods, "ue4ss");
+    const runeList = loaderMods.readControlList(ue4ssMods, "runeschema");
     let entries = [];
+    let runeFrameworkDisabled = false;
     try { entries = fs.readdirSync(ue4ssMods, { withFileTypes: true }); } catch { /* absent */ }
     for (const entry of entries) {
       if (!entry.isDirectory() || ["shared", "bpmodloadermod"].includes(entry.name.toLowerCase())) continue;
       const type = entry.name.toLowerCase() === "runeschema" ? "framework" : "ue4ss";
       const modPath = path.join(ue4ssMods, entry.name);
       const identity = readModIdentity(modPath);
-      detected.push({ key: `${type}:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type, location: platform, path: modPath, files: [], syncEligible: type === "ue4ss" });
+      const loaderState = loaderMods.state(ue4ssMods, "ue4ss", entry.name, modPath, ue4ssList);
+      if (type === "framework") runeFrameworkDisabled = loaderState.loaderEnabled === false;
+      detected.push({ key: `${type}:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type, location: platform, path: modPath, files: [], syncEligible: type === "ue4ss", ...loaderState });
     }
 
     const schemaDir = path.join(ue4ssMods, "RuneSchema", "mods");
     try {
-      const entries = fs.readdirSync(schemaDir, { withFileTypes: true }).filter((entry) => !/^id\.txt$/i.test(entry.name));
+      const entries = fs.readdirSync(schemaDir, { withFileTypes: true }).filter((entry) => !/^(id|runeschema|enabled)\.txt$/i.test(entry.name));
       const rootIdentity = readModIdentity(schemaDir);
       for (const entry of entries) {
         if (!entry.isDirectory() && !entry.isFile()) continue;
         const modPath = path.join(schemaDir, entry.name);
         const identity = entry.isDirectory() ? readModIdentity(modPath) : identityMatches(rootIdentity, path.basename(entry.name, path.extname(entry.name)), entries.length === 1);
-        detected.push({ key: `runeschema:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type: "runeschema", location: platform, path: modPath, files: [], syncEligible: true });
+        const loaderName = entry.isFile() ? path.basename(entry.name, path.extname(entry.name)) : entry.name;
+        detected.push({ key: `runeschema:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type: "runeschema", location: platform, path: modPath, files: [], syncEligible: true, loaderBlockedByFramework: runeFrameworkDisabled, ...loaderMods.state(ue4ssMods, "runeschema", loaderName, modPath, runeList) });
       }
     } catch { /* absent */ }
 

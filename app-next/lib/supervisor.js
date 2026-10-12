@@ -182,6 +182,9 @@ function isAlive(worldId) {
 }
 
 async function startWorldUnlocked(worldId) {
+  if (require("./jobs").listJobs().some((job) => job.status === "running" && job.phase === "copy")) {
+    throw new Error("Wait for the private Server files copy to finish before starting a hosted Server.");
+  }
   let world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   if (isRunning(worldId)) {

@@ -11,6 +11,7 @@ const PHASE_LABELS = {
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
   runtime: "Installing mod loader", mod: "Downloading mod", cleanup: "Cleaning saves",
+  copy: "Forking private server files",
 };
 export function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
 export function labelFor(job) { return job.worldName || (job.type === "install" ? "New server" : job.type === "redist" ? "Prerequisites" : job.type === "runtime" ? "Mod loader" : job.type === "sync" ? "World mod sync" : job.type === "mod" ? "Mod download" : job.type === "cleanup" ? "Save cleaner" : "Server update"); }

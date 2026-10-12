@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.5-super-experimental",
+  "version": "0.1.6-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",
@@ -22,6 +22,8 @@
     "test:profiles": "node scripts/check-client-profile-cache.js",
     "test:launcher-profiles": "node scripts/check-launcher-profiles.js",
     "test:server-forks": "node scripts/check-server-forks.js",
+    "test:client-isolation": "node scripts/check-client-isolation.js",
+    "test:component-updates": "node scripts/check-component-update-lanes.js",
     "test:client-service": "node scripts/check-client-service.js",
     "test:socials": "node scripts/check-social-mods.js",
     "test:discord": "node scripts/check-discord-community.js",

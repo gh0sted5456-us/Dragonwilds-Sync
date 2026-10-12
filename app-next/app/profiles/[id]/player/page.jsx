@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, Icon, toast } from "@/components/ui";
 import ProfileSavesPanel from "@/components/ProfileSavesPanel";
 import ClientSyncJourney from "@/components/ClientSyncJourney";
+import ClientSafeStoragePanel from "@/components/ClientSafeStoragePanel";
 import { useJobsPoll } from "@/components/jobsClient";
 
 export default function PlayerProfile({ params }) {
@@ -268,6 +269,7 @@ export default function PlayerProfile({ params }) {
         <div className="subtle" style={{ marginTop: 5 }}>Verified mods stay in this World profile and are projected into the selected game install only when this World is synchronized or launched. Hard links are preferred; protected or cross-drive installs use a reported fallback.</div>
         {profile.connection?.modDeployment && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}><span className="chip">{profile.connection.modDeployment.mode}</span><span className="chip">{Number(profile.connection.modDeployment.hardlink || 0) + Number(profile.connection.modDeployment.symlink || 0)} linked</span>{profile.connection.modDeployment.copy > 0 && <span className="chip">{profile.connection.modDeployment.copy} copied fallback</span>}</div>}
       </div>
+      <ClientSafeStoragePanel key={`${params.id}:${selectedInstall || ""}`} profileId={params.id} install={selectedInstall} localWorld={!!profile.connection?.localWorld} />
       <ProfileSavesPanel profileId={params.id} />
       <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
         <a className="btn btn-ghost" href="/setup">Application Setup</a>

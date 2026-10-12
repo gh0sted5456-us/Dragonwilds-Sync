@@ -287,7 +287,7 @@ export default function SettingsPage() {
             <div>
               <div className="heading" style={{ fontSize: "0.92rem" }}>Game and framework update notifications</div>
               <div className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600 }}>
-                Checks the Steam dedicated-server branch, the configured Steam and PC Game Pass player installations, UE4SS releases, and RuneSchema. Update badges appear here and in the sidebar.
+                Checks the Steam dedicated-server branch, configured player installations, the Dragonwilds-specific UE4SS package on Nexus, and separate RuneSchema GitHub/Nexus release lanes. New UE4SS builds are flagged for compatibility review instead of being installed automatically.
               </div>
             </div>
             <button className="btn btn-ghost" style={{ marginLeft: "auto", padding: "0.3rem 0.55rem" }}
@@ -302,7 +302,9 @@ export default function SettingsPage() {
             <div style={{ display: "grid", gap: "0.5rem" }}>
               {componentUpdates.items.map((item) => {
                 const amber = item.updateAvailable;
-                const stateLabel = amber
+                const stateLabel = item.compatibility === "unverified"
+                  ? "REVIEW"
+                  : amber
                   ? "UPDATE"
                   : item.installedVersion && item.latestVersion
                     ? "CURRENT"
@@ -327,6 +329,7 @@ export default function SettingsPage() {
                         {" · "}Latest: {item.latestVersion || "unavailable"}
                       </span>
                       {item.error && <span style={{ display: "block", color: "var(--yellow)", fontSize: "0.68rem", marginTop: 2 }}>{item.error}</span>}
+                      {item.note && <span className="subtle" style={{ display: "block", fontSize: "0.68rem", marginTop: 2 }}>{item.note}</span>}
                     </span>
                     <span className="chip" style={{
                       background: amber ? "var(--yellow)" : "var(--line)",

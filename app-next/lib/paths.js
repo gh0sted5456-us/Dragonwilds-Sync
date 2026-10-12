@@ -43,6 +43,7 @@ const P = {
   worldSaveSlots: (worldId) => ensure(path.join(dataDir(), "save-slots", String(worldId))),
   clientProfiles: () => ensure(path.join(dataDir(), "player-profiles")),
   clientProfile: (profileId) => path.join(ensure(path.join(dataDir(), "player-profiles")), String(profileId || "profile").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "profile"),
+  clientOriginals: () => ensure(path.join(dataDir(), "client-originals")),
   profileSaveVaults: () => ensure(path.join(dataDir(), "profile-saves")),
   profileSaveVault: (saveId) => path.join(ensure(path.join(dataDir(), "profile-saves")), String(saveId || "save").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "save"),
   profileSaveRecovery: () => ensure(path.join(dataDir(), "save-recovery")),

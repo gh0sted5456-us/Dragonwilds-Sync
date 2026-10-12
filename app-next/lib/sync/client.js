@@ -9,6 +9,7 @@ const cloudStorage = require("./cloud-storage");
 const steamlib = require("../steamlibrary");
 const { P } = require("../paths");
 const profileSaves = require("../profile-saves");
+const clientIsolation = require("../client-isolation");
 
 const ledgerKey = (profileId) => `clientSyncLedger:${profileId}`;
 const activeLedgerKey = (service, install = "") => {
@@ -224,6 +225,7 @@ async function activateProfileSnapshot(profileId, options = {}) {
   const service = options.service || (["steam", "epic", "gamepass"].includes(connection.service) ? connection.service : (connection.platform === "gamepass" ? "gamepass" : "steam"));
   const install = steamlib.normalizeGameInstall(options.install || profile.client_install || dbm.getSetting(`clientInstall:${service}`, null));
   if (!install) throw new Error(`This World needs a ${steamlib.serviceLabel(service)} game installation before its mod profile can be activated.`);
+  clientIsolation.assertManagedReady(install, service);
   const snapshot = P.clientProfile(profileId);
   const manifest = options.manifest || readProfileSnapshotManifest(profileId);
   if (!manifest) throw new Error("Synchronize this World before activating its mod profile");
@@ -319,6 +321,7 @@ async function performSync(profileId, onProgress = () => {}) {
   const install = steamlib.normalizeGameInstall(profile.client_install || dbm.getSetting(`clientInstall:${service}`, null));
   if (!address || !worldId || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("This World needs a valid Sync endpoint");
   if (!install) throw new Error(`This World needs a ${steamlib.serviceLabel(service)} game installation. Choose it on the World page or under Application Setup.`);
+  clientIsolation.assertManagedReady(install, service);
   const base = `http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`;
   onProgress({ phase: "prepare", percent: 1, message: "Downloading World manifest…", line: `Connecting to ${address}:${port}…` });
   let manifest;

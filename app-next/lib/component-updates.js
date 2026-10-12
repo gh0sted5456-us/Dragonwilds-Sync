@@ -6,8 +6,12 @@ const steamcmd = require("./steamcmd");
 const { DRAGONWILDS_STEAM_APPID } = require("./steamlibrary");
 
 const NEXUS_URL = "https://www.nexusmods.com/runescapedragonwilds/mods/4?tab=files";
+const RUNESCHEMA_NEXUS_URL = "https://www.nexusmods.com/runescapedragonwilds/mods/570";
 const RUNESCHEMA_API = "https://api.github.com/repos/gh0sted5456-us/RuneSchema/releases/latest";
-const RUNESCHEMA_URL = "https://github.com/gh0sted5456-us/RuneSchema";
+const RUNESCHEMA_URL = "https://github.com/gh0sted5456-us/RuneSchema/releases";
+// Verified against the Dragonwilds-specific Nexus package. A new generic
+// UE4SS release is not automatically compatible with RuneSchema.
+const UE4SS_COMPAT_VERSION = "3.0.1-gf6d5f942";
 const CACHE_MS = 10 * 60 * 1000;
 const GAMEPASS_STORE_ID = "9P402RWR63H4";
 const g = globalThis;
@@ -18,6 +22,16 @@ function cleanVersion(value) {
 function different(installed, latest) {
   if (!installed || !latest) return false;
   return cleanVersion(installed).toLowerCase() !== cleanVersion(latest).toLowerCase();
+}
+function newerVersion(installed, latest) {
+  if (!installed || !latest) return false;
+  const numbers = (value) => (cleanVersion(value).match(/^\d+(?:\.\d+)*/)?.[0] || "").split(".").map(Number);
+  const left = numbers(installed), right = numbers(latest);
+  if (!left.length || !right.length) return false;
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    if ((right[index] || 0) !== (left[index] || 0)) return (right[index] || 0) > (left[index] || 0);
+  }
+  return false; // Mainline/experimental suffixes are lanes, not a sortable rank.
 }
 function gameBin(root, platform) {
   return root
@@ -49,7 +63,7 @@ function localVersions(root, platform) {
   const state = readLog(root, platform);
   const ue = state.text.match(/(?:RE-)?UE4SS[^\r\n]{0,180}?(?:version\s*[:=]?\s*|\bv\s*)?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z._-]+)?)/i)
     || state.text.match(/\b(\d+\.\d+\.\d+-g?[0-9a-f]{7,})\b/i);
-  const rs = state.text.match(/RuneSchema[^\r\n]{0,180}?(?:version\s*[:=]?\s*|\bv\s*)?(\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z._-]+)?)/i);
+  const rs = state.text.match(/RuneSchema[^\r\n]{0,180}?(?:version\s*[:=]?\s*|\bv\s*)?(\d+\.\d+\.\d+(?:\.\d+)?[A-Za-z]?(?:[-+][0-9A-Za-z._-]+)?)/i);
   return {
     installed: state.exists,
     ue4ss: ue ? cleanVersion(ue[1]) : null,
@@ -160,6 +174,32 @@ async function latestRuneSchemaVersion() {
   return cleanVersion(value);
 }
 
+function nexusRuneSchemaVersion(html) {
+  const text = visibleText(html);
+  const match = text.match(/RuneSchema\s*-\s*RSDW\s+Modding\s+Community[\s\S]{0,650}?\bVersion\s+(\d+\.\d+\.\d+(?:\.\d+)?[A-Za-z]?)/i);
+  if (!match) throw new Error("Nexus page did not expose the RuneSchema version");
+  return cleanVersion(match[1]);
+}
+
+async function latestRuneSchemaNexusVersion() {
+  return nexusRuneSchemaVersion(await fetchText(RUNESCHEMA_NEXUS_URL));
+}
+
+function ue4ssStatus(installedVersion, nexusVersion) {
+  const compatible = !!nexusVersion && cleanVersion(nexusVersion).toLowerCase() === UE4SS_COMPAT_VERSION.toLowerCase();
+  return {
+    latestVersion: nexusVersion,
+    recommendedVersion: UE4SS_COMPAT_VERSION,
+    compatibility: !nexusVersion ? "unknown" : compatible ? "known-baseline" : "unverified",
+    updateAvailable: compatible && different(installedVersion, nexusVersion),
+    note: !nexusVersion
+      ? "Could not verify the Nexus package right now; keep the installed build until the check succeeds."
+      : compatible
+      ? "Dragonwilds-specific Nexus baseline; select the Steam or PC Game Pass file. Confirm compatibility with your RuneSchema release before replacing a working loader."
+      : "Nexus now reports a different UE4SS build. Check RuneSchema compatibility before updating; no automatic recommendation is made.",
+  };
+}
+
 function maxRuneSchema(steam, gamepass) {
   // We do not rank arbitrary build suffixes. If both platforms report a version,
   // identical is enough; otherwise show the platform that actually exposed one.
@@ -182,17 +222,19 @@ async function getStatus({ force = false } = {}) {
   const installedSteamBuild = steamcmd.readInstalledBuildIdForApp(steamRoot, DRAGONWILDS_STEAM_APPID);
   const installedGamePass = localGamePassVersion(gamepassRoot);
 
-  const [serverBuildResult, steamBuildResult, gamePassResult, nexusResult, runeResult] = await Promise.allSettled([
+  const [serverBuildResult, steamBuildResult, gamePassResult, nexusResult, runeResult, runeNexusResult] = await Promise.allSettled([
     steamcmd.fetchLatestBuildId(),
     steamcmd.fetchLatestBuildId(DRAGONWILDS_STEAM_APPID),
     gamepassRoot ? latestGamePassVersion() : Promise.resolve(null),
     latestNexusVersions(),
     latestRuneSchemaVersion(),
+    latestRuneSchemaNexusVersion(),
   ]);
   const nexusLatest = nexusResult.status === "fulfilled"
     ? nexusResult.value
     : { steam: null, gamepass: null };
   const runeLatest = runeResult.status === "fulfilled" ? runeResult.value : null;
+  const runeNexusLatest = runeNexusResult.status === "fulfilled" ? runeNexusResult.value : null;
   const localRune = maxRuneSchema(steam, gamepass);
 
   const items = [
@@ -240,8 +282,7 @@ async function getStatus({ force = false } = {}) {
       url: NEXUS_URL,
       installed: steam.installed,
       installedVersion: steam.ue4ss,
-      latestVersion: nexusLatest.steam,
-      updateAvailable: different(steam.ue4ss, nexusLatest.steam),
+      ...ue4ssStatus(steam.ue4ss, nexusLatest.steam),
       error: nexusResult.status === "rejected" ? nexusResult.reason?.message || "Nexus check failed" : null,
     },
     {
@@ -252,21 +293,33 @@ async function getStatus({ force = false } = {}) {
       url: NEXUS_URL,
       installed: gamepass.installed,
       installedVersion: gamepass.ue4ss,
-      latestVersion: nexusLatest.gamepass,
-      updateAvailable: different(gamepass.ue4ss, nexusLatest.gamepass),
+      ...ue4ssStatus(gamepass.ue4ss, nexusLatest.gamepass),
       error: nexusResult.status === "rejected" ? nexusResult.reason?.message || "Nexus check failed" : null,
     },
     {
-      id: "runeschema",
-      label: "RuneSchema",
+      id: "runeschema-github",
+      label: "RuneSchema · GitHub mainline",
       platform: "Steam / PC Game Pass",
       source: "GitHub",
       url: RUNESCHEMA_URL,
       installed: !!localRune,
       installedVersion: localRune,
       latestVersion: runeLatest,
-      updateAvailable: different(localRune, runeLatest),
+      updateAvailable: newerVersion(localRune, runeLatest),
       error: runeResult.status === "rejected" ? runeResult.reason?.message || "GitHub check failed" : null,
+    },
+    {
+      id: "runeschema-nexus",
+      label: "RuneSchema · Nexus Mods",
+      platform: "Steam / PC Game Pass",
+      source: "Nexus Mods",
+      url: RUNESCHEMA_NEXUS_URL,
+      installed: !!localRune,
+      installedVersion: localRune,
+      latestVersion: runeNexusLatest,
+      updateAvailable: newerVersion(localRune, runeNexusLatest),
+      note: "Independent release lane. Check its UE4SS requirements before switching from the GitHub build.",
+      error: runeNexusResult.status === "rejected" ? runeNexusResult.reason?.message || "Nexus check failed" : null,
     },
   ];
 
@@ -280,4 +333,4 @@ async function getStatus({ force = false } = {}) {
   return value;
 }
 
-module.exports = { getStatus, cleanVersion, different, localVersions };
+module.exports = { getStatus, cleanVersion, different, newerVersion, localVersions, nexusRuneSchemaVersion, ue4ssStatus, UE4SS_COMPAT_VERSION };

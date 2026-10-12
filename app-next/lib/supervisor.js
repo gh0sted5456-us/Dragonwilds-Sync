@@ -207,6 +207,11 @@ async function startWorldUnlocked(worldId) {
     return { started: false, reason: "server endpoint already active", port: world.rest_api_port };
   }
 
+  // Profile PIDs and the REST listener cannot identify an independently
+  // launched copy of the SteamCMD template. Check the OS before touching the
+  // active profile or spawning another dedicated server.
+  require("./server-process-guard").assertNoConflictingServer(world);
+
   // Scheduled, remote and shortcut starts must obey the same active-profile
   // contract as the GUI. This loads that profile's settings and marker first.
   require("./active-server-profile").activate(worldId);

@@ -61,7 +61,7 @@ copyDir(path.join(root, ".next", "static"), path.join(out, ".next", "static"));
 copyDir(path.join(root, "public"), path.join(out, "public"));
 
 // Record the exact source branch/commit inside the packaged runtime. Update checks
-// compare this marker with main or codex/super-experimental as appropriate.
+// compare this marker with main, the only current source branch.
 const gitValue = (...args) => {
   try { return execFileSync("git", args, { cwd: path.resolve(root, ".."), encoding: "utf8", windowsHide: true }).trim(); }
   catch { return ""; }
@@ -70,7 +70,7 @@ const packageVersion = JSON.parse(fs.readFileSync(path.join(root, "package.json"
 const buildInfo = {
   version: packageVersion,
   commit: gitValue("rev-parse", "HEAD") || null,
-  branch: gitValue("branch", "--show-current") || (packageVersion.includes("experimental") ? "codex/super-experimental" : "main"),
+  branch: gitValue("branch", "--show-current") || "main",
   builtAt: new Date().toISOString(),
 };
 fs.writeFileSync(path.join(out, "build-info.json"), JSON.stringify(buildInfo, null, 2));

@@ -2,11 +2,13 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "rsdw-cloud-storage-"));
 process.env.APP_MANAGER_DATA_DIR = path.join(sandbox, "data");
 const dbm = require("../lib/db");
 const cloud = require("../lib/sync/cloud-storage");
+const cloudExport = require("../lib/sync/cloud-export");
 
 const file = { target: "RSDragonwilds/Content/Paks/~mods/Example.pak", size: 12, sha256: "a".repeat(64) };
 const localManifest = { revision: "local-revision", units: [{ files: [file] }] };
@@ -38,6 +40,26 @@ async function run() {
     cloud.save(worldId, { mode: "local", hostType: "managed" });
     assert.equal(cloud.resolveRemoteFile(worldId, file).url, null, "Local mode attempted cloud delivery");
     assert.equal(cloud.publicStatus(worldId).hostType, "managed", "Switching to direct delivery must not recategorize a paid host");
+
+    const source = path.join(sandbox, "Example.pak");
+    fs.writeFileSync(source, "verified package");
+    const exportFile = { ...file, size: fs.statSync(source).size, sha256: crypto.createHash("sha256").update(fs.readFileSync(source)).digest("hex") };
+    cloudExport.start(worldId, {
+      manifest: { revision: "test-revision", units: [{ files: [exportFile] }] },
+      resolver: () => ({ source }),
+    });
+    let exportStatus;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      exportStatus = cloudExport.status(worldId);
+      if (["ready", "failed"].includes(exportStatus.phase)) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(exportStatus.phase, "ready", exportStatus.error || "Export did not finish");
+    assert.equal(fs.readFileSync(path.join(exportStatus.folder, ...file.target.split("/")), "utf8"), "verified package");
+    const template = JSON.parse(fs.readFileSync(path.join(exportStatus.folder, "rsdw-manifest.json"), "utf8"));
+    assert.equal(template.files[0].sha256, exportFile.sha256);
+    assert.equal(template.files[0].url, "PASTE_PUBLIC_FILE_LINK");
+    assert.throws(() => cloudExport.safeTarget("RSDragonwilds/../secret"), /Unsafe/);
     console.log("Cloud storage delivery: OK");
   } finally {
     try { dbm.db().close(); } catch {}

@@ -12,7 +12,9 @@ const path = require("path");
 
 const REPO = "gh0sted5456-us/Dragonwilds-Sync";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
-const BRANCHES = { stable: "main", experimental: "codex/super-experimental" };
+// The Next app is the only current build on main. Its prerelease version still
+// selects the Super Experimental asset, without following a retired branch.
+const BRANCHES = { stable: "main", experimental: "main" };
 const EXPERIMENTAL_ASSET = /^RSDW-Sync-Super-Experimental-.*-portable\.exe$/i;
 const WINDOWS_ASSET = /\.exe$/i;
 
@@ -37,7 +39,7 @@ function currentBuildInfo() {
   try { saved = JSON.parse(fs.readFileSync(path.join(process.cwd(), "build-info.json"), "utf8")); } catch {}
   const version = currentVersion();
   const branch = process.env.APP_MANAGER_BUILD_BRANCH || saved.branch || (version.includes("experimental") ? BRANCHES.experimental : BRANCHES.stable);
-  const channel = branch === BRANCHES.experimental || version.includes("experimental") ? "experimental" : "stable";
+  const channel = version.includes("experimental") ? "experimental" : "stable";
   return {
     version,
     commit: process.env.APP_MANAGER_BUILD_COMMIT || saved.commit || null,
@@ -133,8 +135,8 @@ async function getStatus() {
   const commitUpdate = !!build.commit && !!data.latestCommit && build.commit !== data.latestCommit;
   const releaseUpdate = build.channel === "stable" && !!data.latest && cmp(data.latest, build.version) > 0;
   const updateAvailable = commitUpdate || releaseUpdate;
-  // An experimental branch may move a few minutes before CI finishes publishing
-  // its matching portable. Do not offer an older executable during that window.
+  // Main may move a few minutes before CI finishes publishing its matching
+  // portable. Do not offer an older executable during that window.
   const releaseMatchesBranch = build.channel !== "experimental" || !data.releaseCommit || data.releaseCommit === data.latestCommit;
   const canAutoUpdate = updateAvailable && !!data.updateAsset && releaseMatchesBranch;
   return { current: build.version, currentCommit: build.commit, branch: build.branch, channel: build.channel, channelLabel: build.channelLabel, latest: data.latest, latestCommit: data.latestCommit, latestCommitAt: data.latestCommitAt, releaseCommit: data.releaseCommit, releaseUrl: data.releaseUrl, branchUrl: data.branchUrl, assets: data.assets, updateAsset: data.updateAsset, checked: data.checked, updateAvailable, canAutoUpdate };

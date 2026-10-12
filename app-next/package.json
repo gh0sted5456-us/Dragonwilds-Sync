@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.1-super-experimental",
+  "version": "0.1.2-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",
@@ -17,6 +17,7 @@
     "dist:linux": "npm run build:next && npm run prepare:standalone && electron-builder --linux",
     "lint": "next lint",
     "test:settings": "node scripts/check-settings-persistence.js",
+    "test:player-cap": "node scripts/check-player-cap.js",
     "test:mods": "node scripts/check-mod-sync-source.js",
     "test:profiles": "node scripts/check-client-profile-cache.js",
     "test:launcher-profiles": "node scripts/check-launcher-profiles.js",

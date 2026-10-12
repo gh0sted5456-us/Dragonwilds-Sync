@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, Icon, toast } from "@/components/ui";
+import { api, Icon, fmtBytes, toast } from "@/components/ui";
 
 const PROVIDER_MARKS = {
   google: { mark: "▲", colors: "#4285f4,#34a853,#fbbc04,#ea4335" },
@@ -16,8 +16,28 @@ export default function CloudStoragePanel({ worldId }) {
   const [hostTypes, setHostTypes] = useState([]);
   const [manifestUrl, setManifestUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exportJob, setExportJob] = useState(null);
+  const [exportPlatform, setExportPlatform] = useState("steam");
   const load = useCallback(() => api(`/api/worlds/${worldId}/storage`).then((result) => { setStorage(result.storage); setProviders(result.providers || []); setHostTypes(result.hostTypes || []); }).catch((error) => toast(error.message, "error")), [worldId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    api(`/api/worlds/${worldId}/storage?export=status`).then((result) => setExportJob(result.export)).catch(() => {});
+  }, [load, worldId]);
+  useEffect(() => {
+    if (!["copying", "verifying"].includes(exportJob?.phase)) return;
+    const timer = setInterval(() => {
+      api(`/api/worlds/${worldId}/storage?export=status`).then((result) => setExportJob(result.export)).catch((error) => toast(error.message, "error"));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [worldId, exportJob?.phase]);
+
+  async function prepareExport() {
+    try {
+      const result = await api(`/api/worlds/${worldId}/storage`, { method: "POST", body: { prepareExport: true, platform: exportPlatform } });
+      setExportJob(result.export);
+      toast("Preparing verified files and a cloud manifest template.", "info");
+    } catch (error) { toast(error.message, "error"); }
+  }
 
   async function save(refresh = false, changes = {}) {
     setBusy(true);
@@ -57,6 +77,21 @@ export default function CloudStoragePanel({ worldId }) {
       {[['local','Direct from RSDW host'],['cloud','Cloud only'],['hybrid','Cloud + direct fallback']].map(([value,label]) => <button key={value} className={`btn ${storage.mode === value ? "btn-primary" : "btn-subtle"}`} disabled={busy} onClick={() => { setStorage((current) => ({ ...current, mode: value })); if (value === "local") save(false, { mode: value }); }}>{label}</button>)}
     </div>
     {storage.mode !== "local" && <>
+      <div className="panel" style={{ padding: ".8rem", marginTop: 12 }}>
+        <strong>Prepare public folder</strong>
+        <div className="subtle" style={{ fontSize: ".72rem", margin: ".3rem 0 .65rem" }}>Copy the selected client-required files into one verified folder with an exact <code>rsdw-manifest.json</code> template. Upload the files, add their public links in that JSON, and then test the manifest below. Cloud account sign-in and upload are not automatic.</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select className="input" style={{ width: "auto" }} value={exportPlatform} onChange={(event) => setExportPlatform(event.target.value)} disabled={["copying", "verifying"].includes(exportJob?.phase)}>
+            <option value="steam">Steam / Epic files</option><option value="gamepass">Game Pass files</option>
+          </select>
+          <button className="btn btn-primary" onClick={prepareExport} disabled={["copying", "verifying"].includes(exportJob?.phase)}><Icon name="download" size={14} /> Prepare Cloud Folder</button>
+          {exportJob?.phase === "ready" && typeof window !== "undefined" && window.desktop?.isElectron && <button className="btn btn-ghost" onClick={() => window.desktop.openPath(exportJob.folder)}><Icon name="folder" size={14} /> Open Folder</button>}
+        </div>
+        {exportJob && exportJob.phase !== "idle" && <div className="subtle" style={{ fontSize: ".7rem", marginTop: 8 }}>
+          {exportJob.phase === "failed" ? `Export failed: ${exportJob.error}` : exportJob.phase === "ready" ? `${exportJob.totalFiles} verified file(s) ready in ${exportJob.folder}` : `${exportJob.phase === "verifying" ? "Verifying" : "Copying"} ${exportJob.copiedFiles}/${exportJob.totalFiles} files · ${fmtBytes(exportJob.copiedBytes)} / ${fmtBytes(exportJob.totalBytes)} · ${exportJob.currentFile || "Starting…"}`}
+        </div>}
+        {["copying", "verifying"].includes(exportJob?.phase) && <progress style={{ width: "100%", marginTop: 6 }} value={exportJob.copiedFiles} max={Math.max(1, exportJob.totalFiles)} />}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginTop: 12 }}>
         {providers.map((provider) => { const art = PROVIDER_MARKS[provider.id] || PROVIDER_MARKS.generic; const active = storage.provider === provider.id; return <button key={provider.id} className={`panel ${active ? "lane-active" : ""}`} disabled={busy} onClick={() => setStorage((current) => ({ ...current, provider: provider.id, hasManifestUrl: active ? current.hasManifestUrl : false }))} style={{ padding: ".75rem", color: "inherit", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 9 }}><span aria-hidden style={{ width: 31, height: 31, borderRadius: 9, display: "grid", placeItems: "center", color: "white", fontWeight: 900, background: `linear-gradient(135deg,${art.colors})` }}>{art.mark}</span><strong>{provider.label}</strong></button>; })}
       </div>
@@ -67,7 +102,7 @@ export default function CloudStoragePanel({ worldId }) {
       </div>
       {storage.lastError && <div className="panel-inset" style={{ marginTop: 8, padding: ".65rem .75rem", borderLeft: "3px solid var(--red)", fontSize: ".74rem" }}>{storage.lastError}</div>}
       <details style={{ marginTop: 10 }}><summary className="subtle" style={{ cursor: "pointer", fontWeight: 780 }}>Public folder setup and manifest format</summary>
-        <ol className="subtle" style={{ fontSize: ".73rem", lineHeight: 1.6, paddingLeft: 20 }}><li>Create a folder in {storage.providerLabel}, upload the exact managed files, and enable <strong>Anyone with the link / Viewer</strong>.</li><li>Copy the generated template, replace each placeholder with that file&apos;s public share link, and save it as <code>rsdw-manifest.json</code>.</li><li>Share that JSON file publicly, paste its link above, then choose <strong>Test & refresh</strong>. Repeat after changing files.</li></ol>
+        <ol className="subtle" style={{ fontSize: ".73rem", lineHeight: 1.6, paddingLeft: 20 }}><li>Prepare the cloud folder above, upload its files to {storage.providerLabel}, and enable <strong>Anyone with the link / Viewer</strong> on each file.</li><li>Replace each placeholder in the generated <code>rsdw-manifest.json</code> with that file&apos;s public share link, then upload the JSON file too.</li><li>Paste the public JSON link above and choose <strong>Test & refresh</strong>. Repeat after changing files.</li></ol>
         <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={copyTemplate}><Icon name="file" size={14} /> Copy exact manifest template</button>
         <pre className="panel" style={{ padding: ".7rem", fontSize: ".68rem", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{`{\n  "schema": "${storage.schema}",\n  "revision": "release-1",\n  "files": [{\n    "target": "RSDragonwilds/Content/Paks/~mods/Example.pak",\n    "size": 12345,\n    "sha256": "64 lowercase hex characters",\n    "url": "https://public-provider-link"\n  }]\n}`}</pre>
       </details>

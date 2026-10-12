@@ -4,8 +4,24 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { allowedDownloadUrl, verifyPortable, MIN_PORTABLE_BYTES } = require("../electron/portable-update");
+const version = require("../lib/appversion");
 
 (async () => {
+  assert.equal(version.BRANCHES.experimental, "main");
+  const priorVersion = process.env.APP_MANAGER_APP_VERSION;
+  const priorBranch = process.env.APP_MANAGER_BUILD_BRANCH;
+  try {
+    process.env.APP_MANAGER_BUILD_BRANCH = "main";
+    process.env.APP_MANAGER_APP_VERSION = "0.1.2-super-experimental";
+    assert.equal(version.currentBuildInfo().channel, "experimental");
+    process.env.APP_MANAGER_APP_VERSION = "1.0.0";
+    assert.equal(version.currentBuildInfo().channel, "stable");
+  } finally {
+    if (priorVersion === undefined) delete process.env.APP_MANAGER_APP_VERSION;
+    else process.env.APP_MANAGER_APP_VERSION = priorVersion;
+    if (priorBranch === undefined) delete process.env.APP_MANAGER_BUILD_BRANCH;
+    else process.env.APP_MANAGER_BUILD_BRANCH = priorBranch;
+  }
   assert(allowedDownloadUrl("https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/test/RSDW.exe"));
   assert(allowedDownloadUrl("https://release-assets.githubusercontent.com/github-production-release-asset/test"));
   assert(!allowedDownloadUrl("http://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/test/RSDW.exe"));

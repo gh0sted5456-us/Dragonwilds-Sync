@@ -252,11 +252,11 @@ function contains(rel, needle, message) {
   contains("components/BackupsPanel.jsx", "check.activeSave");
 }
 
-// Packaged builds identify their Git branch/commit so stable and experimental
-// channels can independently report when GitHub has a newer build.
+// Packaged builds identify their Git commit and version channel; both current
+// and future releases use main as the source branch.
 {
   contains("lib/appversion.js", 'stable: "main"');
-  contains("lib/appversion.js", 'experimental: "codex/super-experimental"');
+  contains("lib/appversion.js", 'experimental: "main"');
   contains("lib/appversion.js", "canAutoUpdate");
   contains("scripts/prepare-standalone.js", '"build-info.json"');
   contains("components/Shell.jsx", "VersionStatusDot");

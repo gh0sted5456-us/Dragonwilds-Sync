@@ -1,10 +1,10 @@
-name: Super Experimental Next Windows Build
+name: RSDW Sync Next Windows Build
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - codex/super-experimental
+      - main
     paths:
       - app-next/**
       - .github/workflows/super-experimental-next-build.yml
@@ -50,6 +50,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check lib\sync\discovery.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-settings-persistence.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-mod-sync-source.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-rsdw-revamp-contract.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-launcher-profiles.js
@@ -66,9 +70,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-cloud-storage.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-player-cap.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-client-admission.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-profile-saves.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-save-cleaner.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-performance-sweep.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-profile-refresh.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -77,6 +87,10 @@ jobs:
           node scripts\check-save-slots.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-lifecycle-guard.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-direct-discovery.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-portable-update.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Next application

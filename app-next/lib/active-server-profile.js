@@ -142,6 +142,9 @@ function materialize(worldOrId, opts = {}) {
   const content = ini.patchRawSettings(current.content, values);
   dbm.setSetting(profileKey(world.world_id), { schema: 1, raw: content });
   ini.writeRawSettings(world.install_dir, content, world.platform);
+  // Game.ini is shared by the installation, so restore this profile's cap
+  // whenever it becomes the active dedicated World.
+  require("./player-cap").materialize(world);
   const persisted = ini.readSettings(world.install_dir, world.platform).options;
   const savedOwnerId = Object.entries(persisted).find(([key]) => key.toLowerCase() === "ownerid")?.[1] ?? "";
   if (savedOwnerId !== ownerId) {

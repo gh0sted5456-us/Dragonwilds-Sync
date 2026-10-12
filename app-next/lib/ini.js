@@ -162,6 +162,6 @@ function applyWorldNetworkSettings(installDir, world, opts = {}) {
 module.exports = {
   serverConfigDir, settingsIniPath, defaultIniPath,
   parseOptionSettings, serializeOptionSettings, patchRawSettings,
-  readSettings, writeSettings, readRawSettings, writeRawSettings,
+  readSettings, writeSettings, readRawSettings, writeRawSettings, writeVerifiedFile,
   withWorldNetworkSettings, applyWorldNetworkSettings,
 };

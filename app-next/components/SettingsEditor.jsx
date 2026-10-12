@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import IniEditor from "@/components/IniEditor";
+import PlayerCapPanel from "@/components/PlayerCapPanel";
 
 // Legacy tuning presets are intentionally not part of Dragonwilds profiles.
 const PRESETS = {};
@@ -132,6 +133,7 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
 
   return (
     <div>
+      <PlayerCapPanel worldId={worldId} />
       {!exists && <Notice color="var(--yellow)">{t("editor.noFileNotice")}</Notice>}
       <Notice color="var(--accent)">
         <Icon name="clock" size={14} /> <Trans i18nKey="editor.onlyChangedNotice" components={{ b: <b /> }} />

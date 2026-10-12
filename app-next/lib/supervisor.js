@@ -128,6 +128,8 @@ function buildArgs(world) {
   // If mods are explicitly disabled for this world, hard-disable via launch flag.
   if (!world.mods_enabled) args.push("-NoMods");
   if (world.extra_args) args.push(...world.extra_args.split(/\s+/).filter(Boolean));
+  const cap = require("./player-cap").settingsFor(world).maxPlayers;
+  args.push(`-ini:Game:[/Script/Engine.GameSession]:MaxPlayers=${cap}`);
   return args;
 }
 

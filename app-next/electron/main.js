@@ -17,7 +17,7 @@ const http = require("http");
 const net = require("net");
 const crypto = require("crypto");
 const { preparePortableUpdate } = require("./portable-update");
-const { materializeRuntime } = require("./stable-runtime");
+const { materializeRuntime, runtimeDistDir } = require("./stable-runtime");
 
 const isDev = process.env.NODE_ENV === "development";
 let PORT = 4317;
@@ -171,7 +171,7 @@ function resourcePath() {
 function bundledRuntime() {
   const base = resourcePath();
   const serverPath = path.join(base, "server.js");
-  const buildIdPath = path.join(base, ".next", "BUILD_ID");
+  const buildIdPath = path.join(base, runtimeDistDir(base), "BUILD_ID");
   if (!fs.existsSync(serverPath)) throw new Error(`The packaged interface entry point is missing (${serverPath}). Download the complete portable build; do not copy individual files out of it.`);
   if (!fs.existsSync(buildIdPath)) throw new Error(`The packaged interface runtime is incomplete (${buildIdPath} is missing). Download a complete portable build.`);
   return { base, serverPath };

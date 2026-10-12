@@ -10,6 +10,22 @@ const REQUIRED = [
   path.join(".next", "server", "app", "api", "socials", "mods", "route.js"),
 ];
 
+function runtimeDistDir(root) {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(root, "build-info.json"), "utf8"));
+    const candidate = String(info.nextDistDir || ".next").replace(/^\.\//, "");
+    if (/^\.next(?:-[a-z0-9-]+)?$/i.test(candidate)) return candidate;
+  } catch {}
+  return ".next";
+}
+
+function requiredFiles(root) {
+  const dist = runtimeDistDir(root);
+  return REQUIRED.map((relative) => relative.startsWith(`.next${path.sep}`)
+    ? path.join(dist, relative.slice(6))
+    : relative);
+}
+
 function safeIdentity(value) {
   const clean = String(value || "").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80);
   return clean || crypto.randomBytes(8).toString("hex");
@@ -20,12 +36,12 @@ function runtimeIdentity(source) {
     const info = JSON.parse(fs.readFileSync(path.join(source, "build-info.json"), "utf8"));
     if (info.commit) return safeIdentity(`${info.version || "build"}-${info.commit}`);
   } catch {}
-  try { return safeIdentity(fs.readFileSync(path.join(source, ".next", "BUILD_ID"), "utf8").trim()); }
+  try { return safeIdentity(fs.readFileSync(path.join(source, runtimeDistDir(source), "BUILD_ID"), "utf8").trim()); }
   catch { return safeIdentity(null); }
 }
 
 function verifyRuntime(root) {
-  const missing = REQUIRED.filter((relative) => !fs.existsSync(path.join(root, relative)));
+  const missing = requiredFiles(root).filter((relative) => !fs.existsSync(path.join(root, relative)));
   if (missing.length) throw new Error(`Interface runtime is incomplete: ${missing.join(", ")}`);
   return true;
 }
@@ -77,4 +93,4 @@ function materializeRuntime(source, dataDirectory) {
   return target;
 }
 
-module.exports = { materializeRuntime, verifyRuntime, runtimeIdentity, materializeTree, REQUIRED };
+module.exports = { materializeRuntime, verifyRuntime, runtimeIdentity, runtimeDistDir, materializeTree, REQUIRED };

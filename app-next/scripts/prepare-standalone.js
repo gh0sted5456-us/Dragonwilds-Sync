@@ -14,6 +14,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { verifyRuntime } = require("../electron/stable-runtime");
 
 const root = process.cwd();
 const nextDistDir = process.env.RSDW_NEXT_DIST_DIR || ".next";
@@ -72,6 +73,7 @@ const buildInfo = {
   version: packageVersion,
   commit: gitValue("rev-parse", "HEAD") || null,
   branch: gitValue("branch", "--show-current") || "main",
+  nextDistDir,
   builtAt: new Date().toISOString(),
 };
 fs.writeFileSync(path.join(out, "build-info.json"), JSON.stringify(buildInfo, null, 2));
@@ -95,4 +97,5 @@ if (!fs.existsSync(serverJs)) {
   console.error("ERROR: server.js missing from assembled output.");
   process.exit(1);
 }
+verifyRuntime(out);
 console.log("Standalone app ready:", out);

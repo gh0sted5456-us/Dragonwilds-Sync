@@ -668,7 +668,56 @@ def _runtime_secret(value: object, label: str) -> str:
     return resolved
 
 
-def _write_dedicated_config_file(config_file: Path, managed: dict) -> None:
+def _merge_ini_section(previous: str, section: str, managed: dict) -> str:
+    output = []
+    active = False
+    found = False
+    for line in previous.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            active = stripped.casefold() == section.casefold()
+            output.append(line)
+            if active and not found:
+                output.extend(f"{key}={value}" for key, value in managed.values())
+                found = True
+            continue
+        key = stripped.split("=", 1)[0].strip().casefold() if "=" in stripped else ""
+        if active and key in managed and not stripped.startswith((";", "#")):
+            continue
+        output.append(line)
+    if not found:
+        output.extend(["", section, *(f"{key}={value}" for key, value in managed.values())])
+    return "\n".join(output).rstrip() + "\n"
+
+
+def player_cap(cfg: dict) -> int:
+    value = cfg.get("max_players", 6)
+    try:
+        cap = int(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Player cap must be a whole number from 1 to 128.") from exc
+    if isinstance(value, bool) or str(value).strip() != str(cap) or not 1 <= cap <= 128:
+        raise ValueError("Player cap must be a whole number from 1 to 128.")
+    return cap
+
+
+def read_game_player_cap(content: str) -> int | None:
+    active = False
+    values = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            active = line.casefold() == "[/script/engine.gamesession]"
+        elif active and "=" in line and not line.startswith((";", "#")):
+            key, value = line.split("=", 1)
+            if key.strip().casefold() == "maxplayers":
+                values.append(player_cap({"max_players": value.strip()}))
+    if len(values) > 1:
+        raise ValueError("Game.ini must contain only one GameSession MaxPlayers setting.")
+    return values[0] if values else None
+
+
+def _write_dedicated_config_file(config_file: Path, managed: dict, section: str = "[/Script/Dominion.DedicatedServerSettings]") -> None:
     config_file.parent.mkdir(parents=True, exist_ok=True)
     previous_mode = config_file.stat().st_mode if config_file.exists() else None
     if previous_mode is not None:
@@ -676,27 +725,12 @@ def _write_dedicated_config_file(config_file: Path, managed: dict) -> None:
             config_file.chmod(previous_mode | stat.S_IWUSR)
         except OSError:
             pass
-    preserved: list[str] = []
+    previous = ";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n"
     if config_file.is_file():
-        try:
-            previous = config_file.read_text(encoding="utf-8-sig", errors="replace")
-        except OSError:
-            previous = ""
-        in_canonical = False
-        for line in previous.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                in_canonical = stripped.casefold() == "[/script/dominion.dedicatedserversettings]"
-                continue
-            if not in_canonical or not stripped or stripped.startswith((";", "#")):
-                continue
-            key = stripped.split("=", 1)[0].strip().casefold() if "=" in stripped else ""
-            if key not in managed:
-                preserved.append(line)
-    content = (";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n\n"
-               "[/Script/Dominion.DedicatedServerSettings]\n"
-               + "\n".join(f"{key}={value}" for key, value in managed.values()) + "\n"
-               + (("\n".join(preserved) + "\n") if preserved else ""))
+        # An unreadable existing INI must fail rather than be replaced with an
+        # empty template and silently lose operator or engine-owned settings.
+        previous = config_file.read_text(encoding="utf-8-sig", errors="replace")
+    content = _merge_ini_section(previous, section, managed)
     tmp = config_file.with_suffix(config_file.suffix + ".dragonwilds.tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
@@ -729,6 +763,8 @@ def write_staged_dedicated_config_templates(profile_id: str, cfg: dict) -> list[
                for platform in ("WindowsServer", "LinuxServer")]
     for target in targets:
         _write_dedicated_config_file(target, managed)
+        if "max_players" in cfg:
+            _write_dedicated_config_file(target.with_name("Game.ini"), {"maxplayers": ("MaxPlayers", player_cap(cfg))}, "[/Script/Engine.GameSession]")
     return targets
 
 
@@ -741,6 +777,8 @@ def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
         # Preserve engine-owned ServerGuid/KnownPlayerList lines while
         # refreshing only launcher-owned settings.
         _write_dedicated_config_file(config_file, managed)
+        if "max_players" in cfg:
+            _write_dedicated_config_file(config_file.with_name("Game.ini"), {"maxplayers": ("MaxPlayers", player_cap(cfg))}, "[/Script/Engine.GameSession]")
     for save_dir in {target.parent.parent.parent / "SaveGames" for target in targets}:
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -777,8 +815,10 @@ def verify_dedicated_config(cfg: dict, server_root: str = "") -> dict:
                     key, value = stripped.split("=", 1)
                     values.setdefault(key.strip().casefold(), []).append(value.strip())
             matches = {key: len(values.get(key, [])) == 1 and values[key][0] == value for key, value in expected.items()}
+            if "max_players" in cfg:
+                matches["maxplayers"] = read_game_player_cap(path.with_name("Game.ini").read_text(encoding="utf-8-sig")) == player_cap(cfg)
             ok = section_found and all(matches.values())
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             matches = {key: False for key in expected}; ok = False; error = str(exc)
         rows.append({"path": str(path), "exact_executable_target": bool(exact and path.resolve(strict=False) == exact.resolve(strict=False)),
                      "exists": path.is_file(), "section_found": section_found, "ok": ok,
@@ -1624,6 +1664,8 @@ class ServerEngine:
             command, launch_env = linux_windows_server_command(exe)
         elif sys.platform.startswith("linux") and bool(((load_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False)):
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
+        if "max_players" in cfg:
+            command.append(f"-ini:Game:[/Script/Engine.GameSession]:MaxPlayers={player_cap(cfg)}")
         PLAYER_BRIDGE.stop()
         PLAYER_SERVICE.reset_session()
         with self._event_lock:

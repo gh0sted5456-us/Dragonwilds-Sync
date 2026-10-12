@@ -81,6 +81,30 @@ Verify the actual native or Proton/Wine process tree, compatibility runtime, por
 SHARE, shutdown, forced-failure cleanup, and absence of orphan descendants. RSDW
 live bridge features may be unavailable and must fail without destabilizing hosting.
 
+## File sharing setup and player cap
+
+Open a dedicated World and choose **File Sharing Setup**. Prepare all client-required
+packages to produce ZIPs and `rsdw-delivery-manifest.json` with sizes and SHA-256
+hashes. Upload the prepared files to your public Google Drive, OneDrive, Dropbox,
+or HTTPS storage, then configure and test each package's public file link. This
+wizard does not sign in or upload to cloud accounts automatically. Direct server
+delivery remains enabled until you choose external delivery; optional server
+fallback provides hybrid delivery. Clients use the authenticated World manifest,
+download inside the launcher, and verify files before reporting parity. Public
+URLs are not shown in the normal client UI, but are not secrets from network tools.
+
+In the World editor, **Player Cap** writes `Game.ini` under
+`[/Script/Engine.GameSession]` as `MaxPlayers`, preserving unrelated INI sections,
+comments, and server identity. The Configuration tab's file editor can also edit
+this value; saving it updates the profile so launch does not restore an old cap.
+Restart the dedicated server to apply it; this is not a live hotload. Six players
+is the documented game limit. Higher values are experimental and require physical
+testing and potentially a compatible mod. Stop the server before editing live
+configuration to prevent the game overwriting it during shutdown.
+
+Player-save backup requests can be disabled in the World editor. When enabled,
+players still choose whether to allow archival; declining does not block joining.
+
 ## Operating checklist
 
 - Backups restore successfully, not merely create successfully.

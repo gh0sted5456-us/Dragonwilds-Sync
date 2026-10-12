@@ -5516,7 +5516,7 @@ def handle(method: str, params: dict) -> object:
         if "character_sharing" in params and isinstance(params.get("character_sharing"), dict):
             profile["character_sharing"] = {"enabled": bool(params["character_sharing"].get("enabled")),
                                             "allow_submissions": bool(params["character_sharing"].get("allow_submissions")),
-                                            "request_backups": True}
+                                            "request_backups": bool(params["character_sharing"].get("request_backups", (profile.get("character_sharing") or {}).get("request_backups", True)))}
         if "community" in params and isinstance(params.get("community"), dict):
             invite = str(params["community"].get("discord_invite") or "").strip()
             guild_id = str(params["community"].get("discord_guild_id") or "").strip()
@@ -5555,7 +5555,10 @@ def handle(method: str, params: dict) -> object:
         machine_owner = str(((state.get("application") or {}).get("server_install") or {}).get("owner_id") or "").strip()
         dedicated.setdefault("owner_id", machine_owner)
         incoming_dedicated = params.get("dedicated_config") if isinstance(params.get("dedicated_config"), dict) else {}
-        for key in ("admin_pass", "world_pass", "owner_id", "port", "port_auto"):
+        if "max_players" in incoming_dedicated:
+            from server_engine import player_cap
+            incoming_dedicated["max_players"] = player_cap(incoming_dedicated)
+        for key in ("admin_pass", "world_pass", "owner_id", "port", "port_auto", "max_players"):
             if key in incoming_dedicated:
                 dedicated[key] = incoming_dedicated.get(key)
         multiple = bool(((state.get("application") or {}).get("advanced") or {}).get("multiple_servers_enabled", False))
@@ -7212,8 +7215,24 @@ def handle(method: str, params: dict) -> object:
         if not profile:
             raise KeyError("Server World not found")
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
+        relative_path = str(params.get("relative_path") or "").replace("\\", "/")
+        game_ini = relative_path.casefold().endswith("/game.ini") and "/config/" in ("/" + relative_path.casefold())
+        cap = None
+        if game_ini:
+            from server_engine import read_game_player_cap
+            cap = read_game_player_cap(str(params.get("content") or ""))
+            if cap is None and "max_players" in (profile.get("dedicated_config") or {}):
+                raise ValueError("Keep GameSession MaxPlayers in Game.ini; set it to 6 to use the documented default cap.")
         result = save_world_config(profile_id, server_root_for_profile(profile), str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
         mirror_live_overlay_file(profile_id, server_root_for_profile(profile), str(result.get("relative_path") or ""))
+        if game_ini:
+            profile = load_server_profile(profile_id) or profile
+            dedicated = profile.setdefault("dedicated_config", {})
+            if cap is None:
+                dedicated.pop("max_players", None)
+            else:
+                dedicated["max_players"] = cap
+            save_server_profile(profile_id, profile)
         if result.get("special") == "mods_txt":
             profile = load_server_profile(profile_id); profile["mods_txt_mode"] = "manual"; save_server_profile(profile_id, profile)
         unit_key = str(result.get("unit_key") or "")

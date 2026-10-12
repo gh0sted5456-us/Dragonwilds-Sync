@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import external_mod_hosting as external
 
@@ -147,12 +149,60 @@ def test_platform_gate() -> None:
     assert not external._package_allowed_for_platform(PlatformSync, manifest, package, "linux")
 
 
+def test_folder_export_preserves_delivery_and_excludes_links() -> None:
+    with tempfile.TemporaryDirectory(prefix="dws-delivery-export-") as raw:
+        root = Path(raw)
+        rows = [{"key": "pak_mod::Example", "name": "Example", "delivery": "server",
+                 "url": "https://private-link.example/secret"}]
+        saved = []
+        profile = {"unit_overrides": {"pak_mod::Example": {external.CONFIG_KEY: {"delivery": "external"}}}}
+        with patch.object(external, "list_external_mods", return_value={"export_root": str(root), "mods": rows}), \
+             patch.object(external, "prepare_external_package", return_value={
+                 "archive_path": str(root / "Paks/Example.zip"), "archive_size": 100,
+                 "archive_sha256": "a" * 64, "content_fingerprint": "b" * 64}), \
+             patch.object(external, "_profile_and_units", return_value=(profile, [], "")), \
+             patch.object(external, "_save_external_config", side_effect=lambda *args: saved.append(args[-1])):
+            result = external.prepare_delivery_folder("world-a")
+        assert result["ok"] and len(result["packages"]) == 1
+        assert saved[0]["delivery"] == "server", "Batch staging changed the active delivery choice"
+        manifest = Path(result["manifest_path"]).read_text(encoding="utf-8")
+        payload = json.loads(manifest)
+        assert payload["packages"][0]["sha256"] == "a" * 64
+        assert payload["packages"][0]["file"] == "Paks/Example.zip"
+        assert "secret" not in manifest and "https:" not in manifest
+        assert not (root / "rsdw-delivery-manifest.json.tmp").exists()
+
+        with patch.object(external, "list_external_mods", return_value={"export_root": str(root), "mods": rows}), \
+             patch.object(external, "prepare_external_package", side_effect=OSError("Source unavailable")):
+            failed = external.prepare_delivery_folder("world-a")
+        assert not failed["ok"] and not failed["packages"] and failed["errors"][0]["name"] == "Example"
+
+
+def test_disabled_recovery_policy_survives_profile_reload() -> None:
+    import profile_store
+    with tempfile.TemporaryDirectory(prefix="dws-recovery-policy-") as raw:
+        with patch.object(profile_store, "SERVER_PROFILES_DIR", Path(raw)):
+            profile_store.save_server_profile("world-a", {
+                "name": "World A", "character_sharing": {"request_backups": False},
+                "world_save_download": {"enabled": False},
+            })
+            # Clear the read cache to reproduce an application restart.
+            with profile_store._CACHE_LOCK:
+                profile_store._PROFILE_CACHE.clear()
+            profile = profile_store.load_server_profile("world-a")
+            assert profile["character_sharing"]["request_backups"] is False
+            assert profile["world_save_download"]["enabled"] is False
+            assert profile_store.list_server_profiles()[0]["character_sharing"]["request_backups"] is False
+
+
 def main() -> None:
     test_url_contracts()
     test_overlay_policy()
     test_verified_overlay_archive()
     test_one_mod_one_transport_metadata()
     test_platform_gate()
+    test_folder_export_preserves_delivery_and_excludes_links()
+    test_disabled_recovery_policy_survives_profile_reload()
     print("verified hybrid Server/External mod delivery contracts: PASS")
 
 

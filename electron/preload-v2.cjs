@@ -149,6 +149,7 @@ function rendererTimeoutFor(method) {
   const name=String(method||'').toLowerCase();
   if(READ_POLICIES[method]||DEDUPE_ONLY.has(method))return READ_TIMEOUT_MS;
   if(['world.discovery.heartbeat','client.background.tick','server.scheduler.tick','server.network.benchmark.maybe','application.rsdw.maybe'].includes(name))return BACKGROUND_INVOKE_TIMEOUT_MS;
+  if(name.startsWith('server.external_mod.prepare')||name==='server.external_mod.test')return LONG_INVOKE_TIMEOUT_MS;
   if(/(?:backup|restore|update|install|download|sync|migration|refresh|import|export|scan|reconcile|materialize)/.test(name))return LONG_INVOKE_TIMEOUT_MS;
   return DEFAULT_INVOKE_TIMEOUT_MS;
 }

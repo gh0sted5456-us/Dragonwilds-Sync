@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '4.0.4',
-  "name": "V4.0.4",
+  version: '4.0.5',
+  "name": "V4.0.5",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.5",
+      "title": "V4.0.5 · Server Configuration and File Sharing",
+      "items": [
+        "Adds profile-owned Game.ini player caps with validation, restart-time application, and preservation of unrelated INI settings and server identity.",
+        "Adds guided File Sharing Setup with batch package and manifest export, verified public cloud links, and direct-server fallback.",
+        "Keeps player-save archival requests configurable across application restarts."
+      ]
+    },
     {
       "version": "4.0.4",
       "title": "V4.0.4 · Dragonwilds Runtime Baselines",

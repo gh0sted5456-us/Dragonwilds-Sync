@@ -138,7 +138,38 @@ def test_world_update_retains_the_route_end_to_end():
         "editing an unrelated field must not strand the profile without a route"
 
 
+def test_player_cap_preserves_ini_and_detects_drift():
+    with tempfile.TemporaryDirectory() as raw:
+        base = Path(raw)
+        exe = base / "RSDragonwilds" / "Binaries" / "Win64" / "RSDragonwilds.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"fixture")
+        cfg = {"server_exe": str(exe), "max_players": 6}
+        for target in se.dedicated_config_targets(cfg, str(base)):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("[Other]\nKeep=yes\n[/Script/Dominion.DedicatedServerSettings]\nServerGuid=identity\nKnownPlayerList=players\n", encoding="utf-8")
+            target.with_name("Game.ini").write_text("; comment\n[Other]\nMaxPlayers=999\n[/Script/Engine.GameSession]\nMaxPlayers=4\nMaxPlayers=5\nKeep=yes\n", encoding="utf-8")
+        se.write_dedicated_config(cfg, str(base))
+        assert se.verify_dedicated_config(cfg, str(base))["ok"]
+        for target in se.dedicated_config_targets(cfg, str(base)):
+            text = target.read_text(encoding="utf-8")
+            assert "ServerGuid=identity" in text and "KnownPlayerList=players" in text and "[Other]\nKeep=yes" in text
+            game = target.with_name("Game.ini").read_text(encoding="utf-8")
+            assert se.read_game_player_cap(game) == 6
+            assert "MaxPlayers=999" in game and "; comment" in game and "Keep=yes" in game
+        target.with_name("Game.ini").write_text("[/Script/Engine.GameSession]\nMaxPlayers=3\n", encoding="utf-8")
+        assert not se.verify_dedicated_config(cfg, str(base))["ok"]
+    for invalid in (0, 129, True, 1.5, "oops"):
+        try:
+            se.player_cap({"max_players": invalid})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid cap accepted")
+
+
 def main():
+    test_player_cap_preserves_ini_and_detects_drift()
     test_both_saved_trees_are_hydrated()
     test_secret_references_are_resolved_before_game_config_write()
     test_blank_payload_does_not_erase_a_saved_route()

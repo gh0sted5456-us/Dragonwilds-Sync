@@ -12,6 +12,7 @@ import base64
 import builtins
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import shutil
@@ -280,6 +281,48 @@ def configure_external_mod(profile_id: str, key: str, *, delivery: str = "server
         cfg["link_tested_at"] = None
     _save_external_config(profile_id, profile, key, cfg)
     return next(row for row in list_external_mods(profile_id)["mods"] if row["key"] == key)
+
+
+def prepare_delivery_folder(profile_id: str) -> dict:
+    """Prepare all eligible packages and a cloud handoff manifest in one place.
+
+    Preparation alone must not change a live World's delivery policy. Operators
+    enable each verified external source after uploading the generated ZIPs.
+    The handoff JSON contains filenames and hashes, never saved public URLs.
+    """
+    before = list_external_mods(profile_id)
+    packages = []
+    errors = []
+    for row in before["mods"]:
+        try:
+            prepared = prepare_external_package(profile_id, row["key"])
+            # Package preparation normally enables external delivery. A batch
+            # export is staging work, so retain the operator's existing choice.
+            profile, _units, _root = _profile_and_units(profile_id)
+            config = _external_config(profile, row["key"])
+            config["delivery"] = row["delivery"]
+            _save_external_config(profile_id, profile, row["key"], config)
+            package_path = Path(prepared["archive_path"])
+            packages.append({
+                "key": row["key"], "name": row["name"],
+                "file": package_path.relative_to(Path(before["export_root"])).as_posix(),
+                "size": prepared["archive_size"], "sha256": prepared["archive_sha256"],
+                "content_fingerprint": prepared["content_fingerprint"],
+            })
+        except Exception as exc:
+            errors.append({"key": row["key"], "name": row["name"], "error": str(exc)})
+    root = Path(before["export_root"])
+    root.mkdir(parents=True, exist_ok=True)
+    manifest = root / "rsdw-delivery-manifest.json"
+    temporary = root / "rsdw-delivery-manifest.json.tmp"
+    temporary.write_text(json.dumps({
+        "schema": "DragonwildsSync.DeliveryExport.v1", "world_id": profile_id,
+        "generated_at": time.time(), "packages": packages,
+    }, indent=2), encoding="utf-8")
+    os.replace(temporary, manifest)
+    return {"ok": not errors, "profile_id": profile_id, "export_root": str(root),
+            "manifest_path": str(manifest), "packages": packages, "errors": errors,
+            "mods": list_external_mods(profile_id)["mods"]}
 
 
 def prepare_external_package(profile_id: str, key: str) -> dict:
@@ -778,6 +821,8 @@ def _install_legacy_patch(module) -> None:
             )
         if method == "server.external_mod.prepare":
             return prepare_external_package(profile_id, str(params.get("key") or ""))
+        if method == "server.external_mod.prepare_folder":
+            return prepare_delivery_folder(profile_id)
         if method == "server.external_mod.test":
             return test_configured_external_mod(profile_id, str(params.get("key") or ""))
         return original_handle(method, params)

@@ -700,7 +700,7 @@ def list_server_profiles() -> list[dict]:
             "dedicated_config": meta.get("dedicated_config") or {},
             "sync_config": {**(meta.get("sync_config") or {}), "access_policy": normalize_access_policy(((meta.get("sync_config") or {}).get("access_policy") or {"blocked_ips": (meta.get("sync_config") or {}).get("blocked_ips", []), "blocked_countries": (meta.get("sync_config") or {}).get("blocked_countries", [])}))},
             "world_save_download": meta.get("world_save_download") or {"enabled": False, "cooldown_value": 6, "cooldown_unit": "hours"},
-            "character_sharing": {"enabled": bool((meta.get("character_sharing") or {}).get("enabled", False)), "allow_submissions": bool((meta.get("character_sharing") or {}).get("allow_submissions", False)), "request_backups": True},
+            "character_sharing": {"enabled": bool((meta.get("character_sharing") or {}).get("enabled", False)), "allow_submissions": bool((meta.get("character_sharing") or {}).get("allow_submissions", False)), "request_backups": bool((meta.get("character_sharing") or {}).get("request_backups", True))},
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
             "player_map": {**(meta.get("player_map") or {}), "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False, **((meta.get("player_map") or {}).get("calibration") or {})}},
@@ -724,8 +724,8 @@ def load_server_profile(profile_id: str) -> dict:
     if isinstance(profile, dict) and profile:
         profile = apply_hosting_defaults(profile)
         profile.pop("dragon_core", None)
-        profile.setdefault("character_sharing", {})["request_backups"] = True
-        profile.setdefault("world_save_download", {})["enabled"] = True
+        profile.setdefault("character_sharing", {}).setdefault("request_backups", True)
+        profile.setdefault("world_save_download", {}).setdefault("enabled", True)
     else:
         profile = {}
     with _CACHE_LOCK:

@@ -1,6 +1,6 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-09-07T00:00:00Z",
+  "updated_at": "2026-10-12T00:00:00Z",
   "name": "V4",
   "consolidated_from": [
     "3.1.0",
@@ -47,6 +47,18 @@
     "2.0.0"
   ],
   "releases": [
+    {
+      "version": "4.0.5",
+      "title": "V4",
+      "date": "2026-10-12",
+      "status": "candidate",
+      "summary": "Adds guided file delivery setup and profile-owned server player caps.",
+      "highlights": [
+        "File Sharing Setup prepares client-required ZIPs and a hash manifest for manual public cloud upload, without changing existing transport choices.",
+        "Server settings and the INI editor retain GameSession MaxPlayers in the profile and apply it on restart; unrelated configuration and server identity are preserved.",
+        "Player-save backup requests remain configurable after reload. Physical game and provider acceptance remain required."
+      ]
+    },
     {
       "version": "4.0.4",
       "title": "V4",

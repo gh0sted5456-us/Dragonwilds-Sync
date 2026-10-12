@@ -550,6 +550,7 @@ try {
     Remove-BuildDirectory 'release\win-unpacked.tmp'
     Remove-BuildDirectory 'release\builder-debug.yml'
     Remove-BuildDirectory 'release\builder-effective-config.yaml'
+    Remove-BuildDirectory 'release\.icon-ico'
     $unexpectedReleaseItems = @(Get-ChildItem -LiteralPath $releaseDir -Force | Where-Object {
         -not ($_.PSIsContainer -eq $false -and $_.Extension -ieq '.exe')
     })

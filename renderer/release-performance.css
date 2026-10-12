@@ -1,0 +1,61 @@
+/* Post-consolidation navigation/scroll performance layer.
+   Keep visual behavior intact while allowing Chromium to skip layout/paint for
+   large off-screen rows until they approach the viewport. */
+
+.main {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.config-file-row,
+.ledger-row,
+.phase6-community-row,
+.recommended-mod-card,
+.world-list-row,
+.world-grid > .world-card,
+.settings-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
+.world-grid > .world-card {
+  contain-intrinsic-size: auto 390px;
+}
+
+.settings-section {
+  contain-intrinsic-size: auto 280px;
+}
+
+/* Category swaps retain these route surfaces and exchange only their live
+   panel. Fixed containment keeps the background and navigation compositor
+   layers stable while Chromium lays out the new panel. */
+.route-settings .settings-layout > div,
+.route-world-management .content {
+  contain: layout style;
+}
+
+html[data-dws-interacting="1"] .mod-clean-row,
+html[data-dws-interacting="1"] .world-card,
+html[data-dws-interacting="1"] .world-list-row,
+html[data-dws-interacting="1"] .config-file-row,
+html[data-dws-interacting="1"] .settings-section,
+html[data-dws-interacting="1"] .recommended-mod-card {
+  transition: none !important;
+}
+
+/* Chromium can enter a pathological relayout cycle when content-visibility is
+   applied to draggable grid rows nested inside open <details> panels. Mod
+   managers are already paged by profile and stay small enough to paint eagerly. */
+.mod-clean-row {
+  content-visibility: visible;
+  contain: none;
+}
+
+/* Do not ask the compositor to animate decorative filters while the user is
+   actively scrolling/navigating. Functional loading indicators remain alive. */
+html[data-dws-interacting="1"] .world-placard-backdrop,
+html[data-dws-interacting="1"] .recommended-mod-media,
+html[data-dws-interacting="1"] .world-card-banner,
+html[data-dws-interacting="1"] .world-card-banner-fallback {
+  filter: none !important;
+}

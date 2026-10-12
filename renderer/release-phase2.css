@@ -1,0 +1,28 @@
+.phase2-save-indicator{
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:4px 9px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.055em;
+  line-height:1.15;
+  white-space:nowrap;
+  background:rgba(12,16,17,.78);
+  color:var(--text-muted,#a9b0ad);
+}
+.phase2-save-indicator.loaded{border-color:rgba(112,190,139,.38);color:#b9e8c8;background:rgba(27,69,43,.62)}
+.phase2-save-indicator.empty{border-color:rgba(202,144,82,.34);color:#e2c29e;background:rgba(72,49,27,.58)}
+.phase2-save-indicator.unknown{border-color:rgba(151,160,158,.24);color:#b1b7b5;background:rgba(33,38,39,.62)}
+.phase2-save-indicator.compact{min-height:20px;padding:3px 7px;font-size:9px}
+.phase2-card-save-state{display:inline-flex;align-items:center;margin-left:6px;vertical-align:middle}
+.world-card-body>.phase2-card-save-state{position:relative;z-index:2;margin:0 0 6px 0}
+.phase2-detail-save-state{display:flex;align-items:center;margin-right:2px}
+.server-tabs .phase2-tab-group{opacity:.72;font-size:9px;letter-spacing:.085em;font-weight:800;text-transform:uppercase}
+.server-tabs .phase2-tab-group:not(:first-child){margin-left:7px;padding-left:10px;border-left:1px solid rgba(255,255,255,.08)}
+@media (max-width:1200px){
+  .phase2-detail-save-state{order:-1;width:100%;margin:0 0 4px 0}
+  .phase2-save-indicator{white-space:normal}
+}

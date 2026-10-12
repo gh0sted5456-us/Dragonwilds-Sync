@@ -1,0 +1,15 @@
+# RSDW Sync unified mod identity v2
+# Provider may be nexus or curseforge. ProjectID is numeric and enables API update checks.
+# ProjectURL opens inside RSDW Sync using an isolated, persistent provider session.
+Schema: DragonwildsSync.ID.v2
+ModId: example-community-mod
+Name: Example Community Mod
+Version: 1.0.0
+Author: Your Modder Name
+Provider: nexus
+ProjectURL: https://www.nexusmods.com/runescapedragonwilds/mods/0000
+ProjectID: 0000
+FileID: 0000
+RuntimeRole: both
+HotloadCapable: false
+Tags: QoL; Storage

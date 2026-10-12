@@ -1,0 +1,99 @@
+[center][url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/][img]https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/website/assets/nexus/dragonwilds-sync-nexus-hero.png[/img][/url]
+
+[size=5][b][color=#D8B45D]DRAGONWILDS SYNC[/color][/b][/size]
+[size=3][color=#AEBAB4]Connected Worlds · Dedicated Servers · Verified Mod Sync · Public Discovery[/color][/size]
+
+[url=https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases][b]DOWNLOAD / RELEASES[/b][/url]  ·  [url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/][b]WEBSITE[/b][/url]  ·  [url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html][b]VISUAL GUIDE[/b][/url]  ·  [url=https://discord.gg/gQ7uY2cQ3q][b]COMMUNITY[/b][/url][/center]
+
+[size=4][b][color=#D8B45D]KEEP EVERY WORLD, CLIENT, AND MOD IN SYNC[/color][/b][/size]
+
+Dragonwilds Sync is a community-built launcher and World-management toolkit for [b]RuneScape: Dragonwilds[/b]. It brings connected World profiles, dedicated-server control, role-aware mod synchronization, runtime management, public discovery, recovery, and authenticated remote administration into one focused application.
+
+It is built for both sides of a connection: the player who wants to join a modded World without manually reconstructing the host's loadout, and the operator who wants to run that World without babysitting a pile of folders, consoles, and scripts.
+
+[quote][b]THE SHORT VERSION[/b]
+[list]
+[*]Connect to saved, LAN, direct-IP, or opt-in public Worlds.
+[*]Compare the host's authenticated manifest with the selected client profile.
+[*]Transfer changed client-required files, verify hashes, and stop before Play if parity is incomplete.
+[*]Keep Singleplayer, Co-Op, Connected, and Dedicated Worlds in separate profiles.
+[*]Manage UE4SS, RuneSchema, and PAK content with load order, provenance, rollback, and recoverable Trash.
+[*]Start, stop, restart, update, monitor, and troubleshoot dedicated servers.
+[*]Use the full launcher, focused Quick window, or standalone headless server controller.
+[/list][/quote]
+
+[size=4][b][color=#D8B45D]VERIFIED, PROFILE-AWARE SYNCHRONIZATION[/color][/b][/size]
+
+Dragonwilds Sync does not treat the game folder as an untracked dumping ground. Managed files carry ownership, runtime scope, platform, distribution policy, and hash metadata. A Connected World receives only the client-required material declared by that World; server-retained tools and dedicated-only loader files stay server-side.
+
+Downloads are staged, inspected, placed through bounded paths, verified, and recorded. [b]Reset & Resync[/b] removes tagged World-owned payloads and reconstructs the selected profile without deleting game/EOS data or save files. Imported archives are inspected rather than trusted merely because they have a .zip extension.
+
+[size=4][b][color=#D8B45D]ONE WORKSPACE FOR EVERY WORLD TYPE[/color][/b][/size]
+
+[list]
+[*][b]Singleplayer[/b] — save-backed local profiles with their own mods, settings, backups, and presentation.
+[*][b]Co-Op[/b] — profile-aware hosting and Sync publication without pretending the launcher owns the native gameplay session.
+[*][b]Connected Worlds[/b] — durable identities, authenticated manifests, saved routes, receipts, and role-correct client material.
+[*][b]Dedicated Servers[/b] — independent saves, credentials, configuration, runtime channels, mods, backups, and network endpoints.
+[/list]
+
+The unified [b]Connect to World[/b] flow handles LAN discovery, Direct Connect, public-directory results, saved profiles, and .rsdwl community manifests. Normal, Hard Mode, Creative, Custom, and additive PVP declarations remain distinct. Passwords and Remote Admin credentials are never published to the public directory.
+
+[center][url=https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/website/assets/nexus/quick-server-dashboard-v3.5.png][img]https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/website/assets/nexus/quick-server-dashboard-v3.5.png[/img][/url]
+[i][color=#87958E]Quick server control uses the same authoritative backend as the full launcher.[/color][/i][/center]
+
+[size=4][b][color=#D8B45D]DEDICATED SERVER CONTROL WITHOUT THE SCRIPT PILE[/color][/b][/size]
+
+Each hosted World retains its own save, presentation, credentials, configuration, mod selection, runtime channel, backups, and synchronization endpoint. Operators can validate the install, repair launcher-managed permissions, manage scoped firewall rules, and supervise the real dedicated process from one place.
+
+The unified Runtime Console combines [b]Game, Server, Sync, UE4SS, and RuneSchema[/b] activity with readable source filters, export, guarded commands, top/bottom controls, and live-follow behavior. Quick Launch adds real rolling server CPU, process-memory, system-RAM, upload, download, and measured latency graphs without starting a second backend.
+
+[size=4][b][color=#D8B45D]RUNTIME AND MOD MANAGEMENT[/color][/b][/size]
+
+UE4SS and RuneSchema have separate [b]Baseline, Stable, Experimental, named, and imported[/b] channels. Complete runtime archives remain separate from ordinary child mods, and writable configuration remains profile-owned.
+
+The importer identifies UE4SS, RuneSchema, and PAK roots inside large or multi-mod archives, supports client/server distribution roles, exposes deterministic fingerprints, and keeps load order independent per profile. Monaco-backed editing is available for supported text formats; binary payloads remain read-only.
+
+[size=4][b][color=#D8B45D]WEBGUI, PUBLIC WORLDS, AND REMOTE OPERATIONS[/color][/b][/size]
+
+Opt-in Worlds can broadcast signed, renewable heartbeats to the Dragonwilds Sync directory. Public discovery is separate from direct reachability and completely separate from Remote Admin authority.
+
+The WebGUI routes supported operations through the same server authority as the desktop application. It uses authenticated sessions, CSRF protection, scoped permissions, rate limiting, and audit history. It is not a second unmanaged server controller.
+
+[center][url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html][b][color=#D8B45D]EXPLORE THE PUBLIC WORLD DIRECTORY →[/color][/b][/url][/center]
+
+[size=4][b][color=#D8B45D]INSTALLATION[/color][/b][/size]
+
+[list=1]
+[*]Download the current [b]Windows Portable[/b] file from the Files tab or official Releases page.
+[*]Place it in a normal writable folder. It does not need to live inside the game directory.
+[*]Run Dragonwilds Sync and complete Guided Setup.
+[*]Confirm the detected retail game and/or dedicated-server directory.
+[*]Create, adopt, import, or connect to a World profile.
+[*]Review the manifest and synchronization receipt before launching.
+[/list]
+
+Updates are published through the application's GitHub-backed update channel. Dedicated hosts can also create Quick or Headless desktop shortcuts for a selected profile.
+
+[spoiler=IMPORTANT SAFETY AND PLATFORM NOTES]
+[list]
+[*]Back up irreplaceable Worlds before adopting or modifying them. Dragonwilds Sync uses backup-first workflows, but an external save backup is still wise.
+[*]Router forwarding, carrier-grade NAT, third-party firewalls, VPN behavior, and WAN reachability depend on the host's real environment.
+[*]Ubuntu AppImage and Linux/Proton support have automated build paths, but real game/runtime combinations remain hardware and distribution dependent.
+[*]Antivirus products may inspect a portable executable that launches a bundled local service. Do not disable protection globally. Use an official release, review the source, and verify its published hash when in doubt.
+[*]Dragonwilds Sync never needs a personal Nexus API key bundled into the application.
+[/list]
+[/spoiler]
+
+[size=4][b][color=#D8B45D]DOCUMENTATION AND SUPPORT[/color][/b][/size]
+
+[list]
+[*][url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/]Official website[/url]
+[*][url=https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html]Helpy — screenshot-rich visual guide[/url]
+[*][url=https://github.com/gh0sted5456-us/Dragonwilds-Sync]Source code and releases[/url]
+[*][url=https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues]Issues and bug reports[/url]
+[*][url=https://discord.gg/gQ7uY2cQ3q]RSDW Modding Community[/url]
+[/list]
+
+[quote][b]INDEPENDENT COMMUNITY PROJECT[/b]
+Dragonwilds Sync is not affiliated with, endorsed by, or sponsored by Jagex Ltd. It is free and open source, and features are never locked behind a donation.[/quote]

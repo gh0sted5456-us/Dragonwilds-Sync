@@ -1,0 +1,126 @@
+{
+  "name": "dragonwilds-sync-next",
+  "version": "0.1.1-super-experimental",
+  "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
+  "author": "RSDW Modding Community",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev:next": "next dev -p 4317",
+    "dev:electron": "wait-on tcp:127.0.0.1:4317 && cross-env ELECTRON_START_URL=http://localhost:4317 NODE_ENV=development electron .",
+    "dev": "concurrently -k -n next,electron -c cyan,magenta \"npm:dev:next\" \"npm:dev:electron\"",
+    "build:next": "next build",
+    "start:next": "next start -p 4317",
+    "pack": "npm run build:next && npm run prepare:standalone && electron-builder --dir",
+    "dist": "npm run build:next && npm run prepare:standalone && electron-builder -wl",
+    "dist:win": "npm run build:next && npm run prepare:standalone && electron-builder --win",
+    "dist:linux": "npm run build:next && npm run prepare:standalone && electron-builder --linux",
+    "lint": "next lint",
+    "test:settings": "node scripts/check-settings-persistence.js",
+    "test:mods": "node scripts/check-mod-sync-source.js",
+    "test:profiles": "node scripts/check-client-profile-cache.js",
+    "test:launcher-profiles": "node scripts/check-launcher-profiles.js",
+    "test:client-service": "node scripts/check-client-service.js",
+    "test:socials": "node scripts/check-social-mods.js",
+    "test:discord": "node scripts/check-discord-community.js",
+    "test:heartbeat": "node scripts/check-world-heartbeat.js",
+    "test:cloud-storage": "node scripts/check-cloud-storage.js",
+    "test:admission": "node scripts/check-client-admission.js",
+    "test:profile-saves": "node scripts/check-profile-saves.js",
+    "test:save-cleaner": "node scripts/check-save-cleaner.js",
+    "test:performance": "node scripts/check-performance-sweep.js",
+    "test:runtime": "node scripts/check-stable-runtime.js",
+    "test:profile-refresh": "node scripts/check-profile-refresh.js",
+    "test:lifecycle": "node scripts/check-lifecycle-guard.js",
+    "test:saves": "node scripts/check-save-slots.js",
+    "test:discovery": "node scripts/check-direct-discovery.js",
+    "test:contract": "node scripts/check-rsdw-revamp-contract.js",
+    "test:update": "node scripts/check-portable-update.js",
+    "prepare:standalone": "node scripts/prepare-standalone.js"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "adm-zip": "^0.5.16",
+    "i18next": "^23.16.8",
+    "monaco-editor": "^0.52.2",
+    "next": "^14.2.35",
+    "node-sqlite3-wasm": "^0.8.59",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^14.1.3",
+    "tree-kill": "^1.2.2",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^37.2.3",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.dragonwilds.sync.next",
+    "productName": "RSDW Sync Experimental",
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist-standalone",
+        "to": "app"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico"
+    },
+    "portable": {
+      "artifactName": "RSDW-Sync-Super-Experimental-${version}-portable.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "public/icon.png",
+      "category": "Game"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "public/icon.png"
+    },
+    "electronLanguages": [
+      "en-US"
+    ]
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true
+  }
+}

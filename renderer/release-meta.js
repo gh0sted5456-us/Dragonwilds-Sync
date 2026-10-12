@@ -1,0 +1,129 @@
+window.DWSYNC_RELEASE_META = Object.freeze({
+  version: '4.0.4',
+  "name": "V4.0.4",
+  "rsdwlVersion": 3,
+  "attributions": [
+    [
+      "Application Creator",
+      "Jonesing4Space"
+    ],
+    [
+      "RuneSchema",
+      "Snorkles"
+    ],
+    [
+      "RSDW",
+      "Hi im Tat"
+    ],
+    [
+      "RSDW Modding Community",
+      "Community contributors"
+    ]
+  ],
+  "changelog": [
+    {
+      "version": "4.0.4",
+      "title": "V4.0.4 · Dragonwilds Runtime Baselines",
+      "items": [
+        "Ships the supplied Dragonwilds-tested UE4SS package as the default baseline and RuneSchema 0.6.1E as the default Experimental runtime.",
+        "Pins repair and rollback to the matching managed RuneSchema GitHub release while retaining server-only loader boundaries and single-load mod activation."
+      ]
+    },
+    {
+      "version": "4.0.3",
+      "title": "V4.0.3 · Single-Load Mod Activation",
+      "items": [
+        "Prevents UE4SS mods from being activated through both enabled.txt and mods.txt after profile deployment or client synchronization.",
+        "Preserves operator-supplied enabled.txt markers and automatically restores RuneSchema's marker when a runtime package omits it."
+      ]
+    },
+    {
+      "version": "4.0.2",
+      "title": "V4.0.2 · Profile Runtime Reliability",
+      "items": [
+        "Makes profile-owned runtime and mod staging safer, including removable defaults and corrected protected-content handling.",
+        "Improves connected-world synchronization, mod inventory reporting, path mapping, launch handoff, and packaged UX reliability."
+      ]
+    },
+    {
+      "version": "4.0.1",
+      "title": "V4.0.1 · Release Build Repair",
+      "items": [
+        "Corrects legacy release checks that rejected version 4 while retaining package and backend version consistency checks.",
+        "Includes the v4 animated update landing page, runtime update approval, profile synchronization, and lifecycle improvements."
+      ]
+    },
+    {
+      "version": "4.0.0",
+      "title": "V4 · Profiles, Sync & Launcher Reliability",
+      "items": [
+        "Server-authoritative mod inventories and compatible runtime synchronization with editable Player and Server mod destinations.",
+        "Runtime updates require approval, and RSDW asset downloads and archive extraction are hardened.",
+        "The animated update landing page remains until Enter and returns on an idle full-application reopen.",
+        "Editor loading is on demand; startup, shutdown, and Windows feature-worker ownership are more reliable."
+      ]
+    },
+    {
+      "version": "3.5.4",
+      "title": "V3.5.4 Connection & UX Repair",
+      "items": [
+        "Repairs the packaged client profile-switch crash so LAN and remote authentication, manifest transfer, verification, acknowledgement, and launch can complete.",
+        "Worlds now publish their complete client-compatible UE4SS and RuneSchema runtime alongside profile mods; dedicated server-only loaders remain protected.",
+        "Data Management exposes editable Player and Server UE4SS, RuneSchema, and PAK destinations with detected defaults and saved manual mappings.",
+        "Connected World mod inventory opens with the full server manifest, startup enters the usable application after its splash, and progress follows the real connection sequence.",
+        "Menus and controls use a cleaner shared action hierarchy and connected profiles expose their files and save backups directly."
+      ]
+    },
+    {
+      "version": "3.5.1",
+      "title": "V3.5.1 Update Safety",
+      "items": [
+        "Update detection now compares correctly stamped package versions so the current release is not repeatedly presented as newer than itself.",
+        "Portable updates download to the user’s Downloads folder, verify the GitHub release asset SHA-256, and remain inert until the user manually replaces the existing executable.",
+        "The launcher stays open after downloading and presents a receipt with the verified file, current executable, checksum, and explicit replacement instructions."
+      ]
+    },
+    {
+      "version": "3.5.0",
+      "title": "V3.5",
+      "items": [
+        "World management — One launcher now manages Singleplayer, Co-Op, Connected, and Dedicated Worlds through durable profile-scoped state, save discovery, conversion, launch, and recovery workflows.",
+        "Profile integrity — Connected World snapshots use their own namespace and cannot hydrate as phantom SinglePlayer Worlds; deletion and legacy migration remove only launcher-managed snapshots.",
+        "World isolation — Inactive Worlds retain independent cached saves, configuration, manifests, mods, runtime selections, backups, and presentation metadata without reading or swapping another World’s live files.",
+        "Discovery and connection — LAN discovery, Direct Connect, public-directory lookup, saved routes, VPN/external paths, and Quick Connect converge on stable World identities and verified endpoints.",
+        "Cloud directory — Hosted Sync Worlds publish signed, renewable Cloudflare heartbeats; public presence remains separate from direct route reachability and passwords are never published.",
+        "Authentication — World-password challenges, LAN trust, pinned transport fallback, publisher identities, invites, deregistration, scoped Remote Admin users, and audit boundaries are enforced by the owning World.",
+        "Connected Worlds — Saved, Connected, and Favorite categories retain their filters and durable profiles while Sync World Directory owns authenticated discovery instead of duplicating World Finder behavior.",
+        "World metadata — Placards expose sanitized identity, status, platform, route, player, rules, rating, runtime, mod, and classification information before authentication where safe.",
+        "World classifications — Normal, Hard Mode, Creative, Custom, and additive PVP metadata are normalized from legacy and current fields and shown as distinct badges on full and horizontal placards.",
+        "Presence reliability — Heartbeats, LAN broadcasts, directory registration, Sync listeners, and adopted dedicated processes are supervised and recover automatically after transient failures.",
+        "Delta synchronization — Clients compare authenticated manifests, download changed payloads through rollback staging, verify parity, and retry a stale route without replacing unrelated local content.",
+        "Managed ownership — Every client-delivered file and bundle carries Dragonwilds Sync identity, hash, platform, runtime scope, distribution policy, and cleanup metadata in the local managed-file ledger.",
+        "Reset and restore — Reset & Resync and Game Restore remove tagged managed payloads, preserve game/EOS/save data, and rebuild the launcher-selected UE4SS and RuneSchema baselines.",
+        "DragonLink-Connect — The connection helper receives one profile-scoped verified address, optional password, and synchronized World type, then selects the matching Dragonwilds connection mode.",
+        "Mod management — UE4SS, RuneSchema, and PAK content use profile-owned repositories, searchable inventories, load ordering, manifests, provenance, fingerprints, ID.txt metadata, publication, rollback, and recoverable Trash.",
+        "Archive inspection — Downloaded or imported runtime/mod archives are inventoried by file and expose client-distribution selectors while unsafe, server-only, unrelated, and unsupported entries remain excluded.",
+        "Runtime boundaries — Client-required Win64 UE4SS/RuneSchema material is separated from dedicated-server-only runtime files so server loaders cannot overwrite retail or Proton client baselines.",
+        "Linux hosting — Native Linux dedicated servers retain Linux-compatible server-only UE4SS/RuneSchema sources, while Windows or Proton players receive the independently verified Win64 client runtime.",
+        "Runtime channels — UE4SS and RuneSchema provide Baseline, Stable, Experimental, named, and imported choices with writable staging, selected-flavor verification, self-heal, reset, delete, and repair libraries.",
+        "Server setup — Existing and SteamCMD installations resolve their authoritative game root, preserve dedicated loader files, validate configuration, repair permissions, manage firewall rules, and block launch on runtime mismatch.",
+        "Server operations — Each hosted World has supervised process state, heartbeat and transfer health, start/stop/restart/update actions, failure evidence, backups, and a unified source-filtered Runtime Console.",
+        "Quick and headless launch — Local, Connected, and Server shortcuts use the same authoritative pipelines as the full launcher; graphical Quick Start and standalone Headless Start target the correct executables.",
+        "WebGUI and remote administration — Remote Server login for the active broadcast World opens an authenticated, CSRF-protected management surface with scoped users, audit history, responsive preview, and no public administrative authority.",
+        "Characters and RSDW — Character profiles, saves, portraits, equipment, inventory, custom items, map/player observations, RSDW tools, icons, model assets, and portable profile exports remain bound to their owning profile.",
+        "Application settings — Theme, loading artwork, hardware acceleration, renderer memory, notifications, background behavior, runtime/data controls, network settings, storage safety, and computer hosting profiles are organized into stable settings pages.",
+        "Persistent window sizing — Application Settings provide remembered, fixed, maximized, preset, current-size, and custom resolutions plus persistent interface scale without crashing or disappearing between settings tabs.",
+        "Experimental handheld layout — SteamOS and Windows handheld mode reuses the authoritative desktop application and profile state while presenting larger controller-friendly title-card navigation.",
+        "Interface reliability — Settings swaps retain their shared shell; detached workspaces, native dialogs, mod viewers, notifications, Trash, and consoles remain themed, movable, focus-safe, and taskbar-aware.",
+        "Window architecture — Runtime Console and ordinary popups use the rapid managed-window host without duplicating the full application renderer, while Monaco-backed Mod Editor workspaces remain inside the authoritative application surface.",
+        "Integrations — GitHub-backed application updates, RSDW assets, community recommendations, optional Nexus provenance, Discord presence, platform icons, and the standalone project website retain explicit trust boundaries.",
+        "Performance and diagnostics — Compact status refreshes, bounded polling, cached presentation, batched console updates, redacted logs, network evidence, failure tails, and actionable recovery messages reduce repaint and troubleshooting noise.",
+        "Safety — Credentials remain in protected storage, public metadata is sanitized, destructive operations are backup-first and path-bounded, generated client mods.txt files are local and role-filtered, and rollback remains recoverable.",
+        "Packaging — Windows remains portable-only in version 3.5.1 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
+        "Release history — The former Alpha, V2.x, and incremental V3 notes are consolidated here into this single authoritative V3 changelog."
+      ]
+    }
+  ],
+  "licenseTitle": "Dragonwilds Sync Community License 1.0",
+  "licenseSummary": "Free-of-charge use, modification, mirroring, and redistribution are permitted with attribution. Dragonwilds Sync itself may not be sold or placed behind mandatory payment. The .rsdwl extension/specification is royalty-free and open for interoperability. Third-party materials remain under their owners' terms."
+});

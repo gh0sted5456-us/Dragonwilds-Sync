@@ -1,0 +1,13 @@
+{
+  "format": "dragonwilds-sync-public-directory-snapshot",
+  "version": 2,
+  "generated_at": 0,
+  "degraded_mode": true,
+  "canonical_api": "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds",
+  "directory": {
+    "source": "dragonwilds-sync-heartbeats",
+    "sync_only": true,
+    "note": "The live Cloudflare directory is authoritative; this empty snapshot never imports third-party public servers."
+  },
+  "worlds": []
+}

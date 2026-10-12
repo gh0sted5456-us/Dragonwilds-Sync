@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>World card layout validation</title>
+  <link rel="stylesheet" href="../../renderer/styles.css" />
+  <link rel="stylesheet" href="../../renderer/release-responsiveness.css" />
+  <style>
+    html,body{min-height:100%;overflow:auto}
+    body{padding:24px;background:var(--bg);font-size:12px}
+    .validation-stage{display:grid;gap:28px;align-items:start}
+    .validation-placard{width:359px;max-width:100%}
+    .validation-row{width:min(920px,100%)}
+    .validation-label{margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+    #validation-result{position:fixed;right:12px;top:12px;z-index:20;padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);font-weight:800}
+  </style>
+</head>
+<body>
+  <output id="validation-result">Checking layout…</output>
+  <main class="validation-stage">
+    <section>
+      <p class="validation-label">Private World placard</p>
+      <article class="world-card app-world-placard has-placard validation-placard" id="validation-placard" style="--world-placard:url('../../renderer/assets/placards/2.webp')">
+       <div class="world-card-inner"><section class="world-card-face world-card-front">
+        <div class="world-card-media"><img class="world-card-banner" src="../../website/assets/demo-world-banner.svg" alt=""/><div class="world-card-banner-blend"></div></div>
+        <div class="world-card-body">
+          <img class="world-icon" src="../../website/assets/demo-world-icon.svg" alt="" />
+          <div class="card-topline">
+            <div class="card-title"><h3>SinglePlayer</h3><small>PRIVATE WORLD</small></div>
+            <span class="status-pill unknown">LOCAL</span>
+          </div>
+          <div class="card-description">Your launcher-managed local Dragonwilds World.</div>
+          <div class="world-tag-groups" id="validation-tag-placard"><div class="world-tag-group game"><b>DRAGONWILDS</b><span class="tag">#NORMAL</span><span class="tag">#EOS</span></div><div class="world-tag-group sync"><b>SYNC</b><span class="tag">#PASSWORD</span></div></div>
+          <div class="badges" style="margin-top:8px"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span><span class="badge vanilla">SINGLEPLAYER</span><span class="badge vanilla">LOCAL</span></div>
+          <div class="card-footer"><div class="card-metrics"><span>SINGLEPLAYER</span></div><span class="world-rating"><span>☆☆☆☆☆</span><b>New</b><small>(0)</small></span></div>
+        </div>
+       </section></div>
+        <div class="placard-actions integrated" id="validation-actions"><button class="btn play">Launch World</button><button class="btn ghost">Start Co-Op</button><button class="btn ghost">Connection Settings</button><button class="btn ghost">Update &amp; Restart</button></div>
+      </article>
+    </section>
+    <section>
+      <p class="validation-label">Horizontal World row</p>
+      <article class="world-list-row has-placard validation-row" id="validation-row" style="--world-placard:url('../../renderer/assets/placards/2.webp')">
+        <div class="world-list-icon"><img src="../../renderer/assets/singleplayer-icon.webp" alt="" /></div>
+        <div class="world-list-main"><div class="world-list-title"><h3>SinglePlayer</h3><span class="status-pill unknown">LOCAL</span></div><div class="world-list-meta"><span>Private World</span><span>Local</span></div><div class="badges"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span></div></div>
+        <div class="world-list-banner"><img src="../../website/assets/demo-world-banner.svg" alt="" /></div>
+        <div class="world-row-actions"><button class="btn play compact-btn">Start Server</button><button class="btn ghost compact-btn">World Management</button></div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const params=new URLSearchParams(location.search);
+    document.body.dataset.theme=params.get('theme')||'dark';
+    const rect=(node)=>{const value=node.getBoundingClientRect();return {left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height};};
+    const intersects=(a,b)=>a.left<b.right-.5&&a.right>b.left+.5&&a.top<b.bottom-.5&&a.bottom>b.top+.5;
+    const luminance=(value)=>{const rgb=(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number).map((channel)=>{const normalized=channel/255;return normalized<=.03928?normalized/12.92:((normalized+.055)/1.055)**2.4;});return .2126*(rgb[0]||0)+.7152*(rgb[1]||0)+.0722*(rgb[2]||0);};
+    const contrast=(foreground,background)=>{const high=Math.max(luminance(foreground),luminance(background));const low=Math.min(luminance(foreground),luminance(background));return (high+.05)/(low+.05);};
+    // Headless Chromium can suspend animation frames; font readiness and
+    // synchronous layout reads provide the actual prerequisite for this check.
+    document.fonts.ready.then(()=>{
+      const card=document.querySelector('#validation-placard');
+      const body=rect(card.querySelector('.world-card-body'));
+      const footer=rect(card.querySelector('.card-footer'));
+      const actions=rect(card.querySelector('.placard-actions.integrated'));
+      const buttons=[...card.querySelectorAll('.placard-actions .btn')].map(rect);
+      const tagPlacardStyle=getComputedStyle(document.querySelector('#validation-tag-placard'));
+      const row=rect(document.querySelector('#validation-row'));
+      const rowActionsNode=document.querySelector('#validation-row .world-row-actions');
+      const rowNode=document.querySelector('#validation-row');
+      const rowActions=rect(rowActionsNode);
+      const rowButtons=[...document.querySelectorAll('#validation-row .btn')].map(rect);
+      const textFits=(node)=>node.scrollWidth<=node.clientWidth+1&&node.scrollHeight<=node.clientHeight+1;
+      const pairOverlap=(values)=>values.some((value,index)=>values.slice(index+1).some((other)=>intersects(value,other)));
+      const errors=[];
+      const banner=card.querySelector('.world-card-banner');
+      const icon=card.querySelector('.world-icon');
+      if(!getComputedStyle(card.querySelector('.world-card-face'),'::before').backgroundImage.includes('placards/2.webp'))errors.push('absolute placard face background missing');
+      if(!banner.complete||!banner.naturalWidth)errors.push('server banner did not load');
+      if(!icon.complete||!icon.naturalWidth)errors.push('server icon did not load');
+      if(!card.querySelector('.world-card-banner-blend'))errors.push('banner blend layer missing');
+      if(actions.top+.5<body.bottom)errors.push('actions overlap body');
+      if(buttons.some((button)=>button.top+.5<footer.bottom))errors.push('buttons overlap rating/footer');
+      if(buttons.some((button)=>button.left<rect(card).left-.5||button.right>rect(card).right+.5))errors.push('button escapes placard');
+      if(pairOverlap(buttons))errors.push('placard buttons overlap');
+      if([...card.querySelectorAll('.placard-actions .btn')].some((button)=>!textFits(button)))errors.push('placard button text clipped');
+      if(tagPlacardStyle.backgroundColor==='rgb(255, 255, 255)'||tagPlacardStyle.backgroundColor==='rgba(255, 255, 255, 1)')errors.push('Dragonwilds/Sync placard is white');
+      if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.webp'))errors.push('horizontal placard background missing');
+      const rowBanner=rowNode.querySelector('.world-list-banner img');
+      if(!rowBanner.complete||!rowBanner.naturalWidth)errors.push('horizontal server banner did not load');
+      const rowTitleStyle=getComputedStyle(rowNode.querySelector('.world-list-title h3'));
+      const rowActionStyle=getComputedStyle(rowNode.querySelector('.world-row-actions .btn.ghost'));
+      if(contrast(rowTitleStyle.color,'rgb(11, 16, 16)')<4.5)errors.push(`horizontal title contrast ${contrast(rowTitleStyle.color,'rgb(11, 16, 16)').toFixed(2)}`);
+      if(contrast(rowActionStyle.color,'rgb(11, 16, 16)')<4.5)errors.push(`horizontal action contrast ${contrast(rowActionStyle.color,'rgb(11, 16, 16)').toFixed(2)}`);
+      if(rowActionStyle.display==='none')errors.push('horizontal Manage action hidden');
+      if(row.height>(innerWidth<=520?120.5:90.5))errors.push(`horizontal height ${row.height}px`);
+      if(rowButtons.some((button)=>button.left<row.left-.5||button.right>row.right+.5||button.top<row.top-.5||button.bottom>row.bottom+.5))errors.push(`horizontal button escapes row ${JSON.stringify({row,actions:rowActions,buttons:rowButtons,actionsStyle:{display:getComputedStyle(rowActionsNode).display,position:getComputedStyle(rowActionsNode).position,alignSelf:getComputedStyle(rowActionsNode).alignSelf,justifyContent:getComputedStyle(rowActionsNode).justifyContent,gridColumn:getComputedStyle(rowActionsNode).gridColumn,gridRow:getComputedStyle(rowActionsNode).gridRow}})}`);
+      if(pairOverlap(rowButtons))errors.push('horizontal buttons overlap');
+      if([...rowNode.querySelectorAll('.world-row-actions .btn')].some((button)=>!textFits(button)))errors.push('horizontal button text clipped');
+      document.documentElement.dataset.validation=errors.length?'fail':'pass';
+      const detail=errors.length?`FAIL · ${errors.join(' · ')}`:`PASS · no overlap · horizontal ${row.height}px`;
+      document.querySelector('#validation-result').textContent=detail;
+      if(location.protocol==='http:'||location.protocol==='https:')fetch(`/__validation?case=${encodeURIComponent(params.get('case')||'unknown')}&status=${errors.length?'fail':'pass'}&detail=${encodeURIComponent(detail)}`).catch(()=>{});
+    });
+  </script>
+</body>
+</html>

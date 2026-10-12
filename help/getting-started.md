@@ -1,0 +1,32 @@
+# Getting Started
+
+Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, characters, mods, and Sync metadata around profiles.
+
+## First launch
+
+- On Windows, launch **Dragonwilds Sync.exe**. On Linux, launch **Dragonwilds Sync.AppImage** after granting executable permission.
+- Keep **Dragonwilds Sync Headless** beside the normal application when you need command-line server operation or Headless desktop shortcuts.
+- Complete **Player Setup** and select the Dragonwilds installation.
+- Let Sync validate the game layout before installing or repairing shared client prerequisites.
+- Pick a character after discovery completes.
+- Use **Dragonwilds** for Singleplayer, Co-Op, Dedicated hosting, World profiles, and connected or declared Sync-capable Worlds.
+
+![Current Dragonwilds Appy](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/02-worlds.png) "The Dragonwilds game icon opens the combined World and hosting workspace."
+
+## Recommended first run
+
+1. Open **Dragonwilds → Game Setup** and validate the local game folder.
+2. Open **Profile** and confirm the expected Character saves and World associations.
+3. Open **Mods** and confirm the active profile's editable mod inventory.
+4. Launch Singleplayer once, or configure Co-Op/Dedicated from Dragonwilds.
+5. Open **Sync** only when you are ready to link or publish a fingerprint-verified World.
+
+## Safe application updates
+
+**Download Update** saves the GitHub release asset to Downloads and verifies its SHA-256. The launcher remains open and does not execute, replace, or delete either file. Review the receipt, close Dragonwilds Sync, manually replace the old portable file, and start the replacement.
+
+## Offline behavior
+
+The Help frame remains built into the application. This page is part of the refreshable GitHub Help layer and is cached after a successful refresh, so a temporary GitHub outage does not remove the last downloaded guide.
+
+> Help content can explain a workflow, but operation errors and verification status shown by the launcher remain authoritative.

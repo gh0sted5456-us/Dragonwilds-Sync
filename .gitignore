@@ -1,0 +1,33 @@
+node_modules/
+.pnpm-store/
+.tmp-test-home/
+dist/
+dist-service/
+build-service/
+release/
+release-linux/
+dist-service-linux/
+build-service-linux/
+flatpak-build/
+flatpak-repo/
+.venv-linux-build/
+.venv-build/
+.test-venv/
+*.log
+__pycache__/
+*.pyc
+Codex Outputs/
+test-results/
+app-next/.next/
+app-next/node_modules/
+app-next/release/
+app-next/dist-standalone/
+app-next/.data/
+app-next/Obietek-DragonWilds-Setup/
+app-next/preview/
+
+# Cloudflare local state and development secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

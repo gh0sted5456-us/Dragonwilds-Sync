@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Remote Server Login</title>
+  <defs><linearGradient id="g" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#f0c66e"/><stop offset="1" stop-color="#9b6d25"/></linearGradient></defs>
+  <rect x="7" y="9" width="50" height="38" rx="8" fill="#111718" stroke="url(#g)" stroke-width="3"/>
+  <path d="M17 19h30M17 27h18" stroke="#aeb6b2" stroke-width="3" stroke-linecap="round"/>
+  <path d="M25 47v7m14-7v7M19 55h26" fill="none" stroke="#d5a54a" stroke-width="3" stroke-linecap="round"/>
+  <rect x="36" y="31" width="15" height="13" rx="3" fill="#d5a54a"/>
+  <path d="M40 31v-3a3.5 3.5 0 0 1 7 0v3" fill="none" stroke="#f0c66e" stroke-width="3"/>
+  <circle cx="43.5" cy="37.5" r="1.7" fill="#111718"/>
+</svg>

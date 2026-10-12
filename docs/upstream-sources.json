@@ -1,0 +1,99 @@
+{
+  "schema": "DragonwildsSync.UpstreamSources.v1",
+  "updated_at": "2026-09-03T17:20:00Z",
+  "description": "Authoritative source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. UE4SS and RuneSchema keep immutable packaged stable builds while downloaded GitHub versions are retained in local version libraries. RSDW data and runtime tooling remain separate sources.",
+  "security": {
+    "allow_arbitrary_commands": false,
+    "allowed_transport": ["https"],
+    "last_known_good_cache": true,
+    "bundled_fallback": true
+  },
+  "sources": {
+    "rsdwtools": {
+      "display_name": "RSDWTools",
+      "enabled": true,
+      "type": "github-branch",
+      "repository": "RSDWArchive/RSDWTools",
+      "branch": "main",
+      "components": ["icons", "item-manifest", "reference-data"],
+      "runtime_component": false,
+      "description": "Canonical GitHub-backed data/content source for icons, item manifests and reference data. It is not the installed UE4SS Dev Kit runtime."
+    },
+    "rsdw-icons": {
+      "display_name": "RSDW Icons",
+      "enabled": true,
+      "type": "github-path",
+      "repository": "RSDWArchive/RSDWTools",
+      "branch": "main",
+      "path": "website/shared/icons",
+      "parent": "rsdwtools",
+      "description": "Canonical colored RSDW icon pack. Dragonwilds Sync maintains its own validated icon fingerprint/index so exact item-to-icon associations survive offline use."
+    },
+    "rsdw-item-manifest": {
+      "display_name": "RSDW Item Manifest",
+      "enabled": true,
+      "type": "github-path",
+      "repository": "RSDWArchive/RSDWTools",
+      "branch": "main",
+      "path": "data/items/json/RSDragonwilds",
+      "association_catalog": "website/tools/item-editor/data/catalog.json",
+      "icons_path": "website/shared/icons",
+      "parent": "rsdwtools",
+      "description": "Canonical RSDW item JSON tree and item-editor association data used to build Dragonwilds Sync's offline manifest/index."
+    },
+    "rsdw-toolkit": {
+      "display_name": "RSDW Dev Kit",
+      "enabled": true,
+      "type": "github-release",
+      "repository": "RSDWArchive/RSDWDevKit",
+      "release_url": "https://github.com/RSDWArchive/RSDWDevKit/releases",
+      "runtime_component": true,
+      "runtime_roles": ["server", "host"],
+      "icon": "assets/navigation/rsdw-l.webp",
+      "legacy_physical_names": ["RSDWTools"],
+      "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. Releases are resolved from RSDWArchive/RSDWDevKit; this is distinct from the RSDWTools data repository and is never synchronized to joining clients."
+    },
+    "dragonconnect": {
+      "display_name": "DragonConnect",
+      "enabled": true,
+      "type": "bundled-lua-core",
+      "repository": "gh0sted5456-us/Dragonwilds-Sync",
+      "release_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases",
+      "bundled_fallback": "resources/NativeRuntimeMods/DragonConnect",
+      "runtime_component": true,
+      "runtime_roles": ["client"],
+      "description": "Hidden launcher-owned UE4SS Lua client Core that performs the one-time verified Direct Connect address/password handoff. It contains no native DLLs and is never supplied by a World."
+    },
+    "runeschema": {
+      "display_name": "RuneSchema",
+      "enabled": true,
+      "type": "github-release",
+      "repository": "gh0sted5456-us/RuneSchema",
+      "release_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E",
+      "bundled_fallback": "resources/RuneSchema-experimental-latest.zip",
+      "runtime_component": true,
+      "runtime_roles": ["server", "client"],
+      "update_owner": "Dragonwilds Sync version library",
+      "description": "RuneSchema 0.6.1E is the packaged Experimental default. The matching GitHub release is the validated restoration source and downloaded builds remain selectable for rollback."
+    },
+    "ue4ss": {
+      "display_name": "UE4SS",
+      "enabled": true,
+      "type": "github-release",
+      "repository": "gh0sted5456-us/RuneSchema",
+      "release_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E",
+      "bundled_fallback": "resources/DragonwildsServerRuntime/UE4SS-core-latest.zip",
+      "runtime_roles": ["server", "client"],
+      "update_owner": "Dragonwilds Sync version library",
+      "description": "The supplied Dragonwilds-tested UE4SS archive is the default packaged baseline. Its matching GitHub release is the restoration source; version.dll remains dedicated-server-only."
+    },
+    "rsdwmodel": {
+      "display_name": "RSDWModel",
+      "enabled": true,
+      "type": "github-branch",
+      "repository": "RSDWArchive/RSDWModel",
+      "branch": "main",
+      "description": "Avatar/model source used by the RSDW Dev Kit character experience."
+    }
+  }
+}

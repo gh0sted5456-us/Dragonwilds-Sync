@@ -1,0 +1,64 @@
+name: Deploy Cloudflare World Directory
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_only:
+        description: 'Emergency compatible Worker deployment while D1 quota blocks migrations; apply migrations after reset'
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'cloudflare/world-directory/**'
+      - '.github/workflows/cloudflare-world-directory.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-world-directory
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install Worker dependencies
+        working-directory: cloudflare/world-directory
+        run: npm install --no-audit --no-fund
+
+      - name: Verify indexed retention and error handling
+        working-directory: cloudflare/world-directory
+        run: npm test
+
+      - name: Type-check Worker
+        working-directory: cloudflare/world-directory
+        run: npx tsc --noEmit
+
+      - name: Apply D1 migrations
+        if: ${{ !inputs.deploy_only }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare/world-directory
+          command: d1 migrations apply dragonwilds-sync-worlds --remote
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare/world-directory
+          command: deploy

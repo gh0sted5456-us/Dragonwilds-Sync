@@ -1,0 +1,111 @@
+# Permanent desktop UX/multi-window regression gate. Keep this on release-bound branches.
+name: UX and Window Surface Gate
+
+on:
+  push:
+    branches:
+      - testing-branch
+      - experimental
+      - main
+    paths:
+      - 'renderer/**'
+      - 'build-assets/application-icon.png'
+      - 'package.json'
+      - 'electron/**'
+      - 'backend/dragonwilds_service*.py'
+      - 'backend/directory_web*.py'
+      - 'scripts/check_window_surfaces_electron.cjs'
+      - 'scripts/check_window_navigation_lifecycle.cjs'
+      - 'scripts/check_navigation_swaps_electron.cjs'
+      - 'scripts/check_landing_lifecycle_electron.cjs'
+      - 'scripts/check_quick_window_electron.cjs'
+      - 'scripts/quick_window_fixture_preload.cjs'
+      - 'scripts/check_world_management_navigation.cjs'
+      - 'scripts/check_public_server_list.cjs'
+      - 'scripts/check_phase2_world_management.cjs'
+      - 'scripts/check_phase3_responsiveness.cjs'
+      - 'scripts/check_navigation_performance.cjs'
+      - 'scripts/validate_world_cards_headless.cjs'
+      - 'scripts/fixtures/**'
+      - '.github/workflows/window-surface-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-ux-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - name: Verify navigation, World Management, directory, and layout contracts
+        run: |
+          node scripts/check_window_navigation_lifecycle.cjs
+          node scripts/check_world_management_navigation.cjs
+          node scripts/check_public_server_list.cjs
+          node scripts/check_phase2_world_management.cjs
+          node scripts/check_phase3_responsiveness.cjs
+          node scripts/check_navigation_performance.cjs
+          node scripts/validate_world_cards_headless.cjs
+
+  ubuntu-window-surfaces:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Install backend runtime dependencies
+        run: python -m pip install -r backend/requirements-build.txt
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
+      - name: Exercise managed/detached windows, navigation, and Quick UI
+        run: |
+          export DRAGONWILDS_SYNC_PYTHON="$(command -v python)"
+          xvfb-run -a npx electron --no-sandbox scripts/check_landing_lifecycle_electron.cjs
+          xvfb-run -a npx electron --no-sandbox scripts/check_window_surfaces_electron.cjs
+          xvfb-run -a npx electron --no-sandbox scripts/check_navigation_swaps_electron.cjs
+          xvfb-run -a npx electron --no-sandbox scripts/check_quick_window_electron.cjs
+
+  windows-window-surfaces:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Install backend runtime dependencies
+        run: python -m pip install -r backend/requirements-build.txt
+      - name: Exercise production Windows window surfaces
+        shell: powershell
+        run: |
+          $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          npx electron scripts/check_landing_lifecycle_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron scripts/check_window_surfaces_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron scripts/check_navigation_swaps_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron scripts/check_quick_window_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Quick UX capture
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: experimental-ux-capture-windows
+          if-no-files-found: ignore
+          path: test-results/quick-dashboard-v3.5.png

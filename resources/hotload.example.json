@@ -1,0 +1,4 @@
+{
+  "hotload": true,
+  "note": "Rename to hotload.json and place in a UE4SS or RuneSchema mod root. Presence is the capability marker."
+}

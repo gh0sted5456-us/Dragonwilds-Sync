@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import unittest
+
+from network_service import DirectoryNetworkService, HEARTBEAT_INTERVAL_SECONDS
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
+from public_worlds import _sync_directory_world
+from world_classification import classification_labels, normalize_world_classification
+from world_directory import normalize_heartbeat
+from unittest.mock import patch
+import json
+from pathlib import Path
+from unittest import mock
+
+
+class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
+    def test_invite_creation_requires_exact_body_publisher_authentication(self):
+        worker = (Path(__file__).resolve().parents[1] / "cloudflare" / "world-directory" / "src" / "index.ts")
+        source = worker.read_text(encoding="utf-8")
+        handler = source.split("async function createWorldInvite", 1)[1].split(
+            "async function resolveWorldInvite", 1
+        )[0]
+        self.assertIn('request.headers.get("x-dws-timestamp")', handler)
+        self.assertIn("const rawBody = await request.text()", handler)
+        self.assertIn("authenticatePublisher(request, env, timestamp, rawBody, worldId, false)", handler)
+        self.assertNotIn("await request.json()", handler)
+        self.assertLess(handler.index("authenticatePublisher("), handler.index("INSERT INTO world_invites"))
+
+    def test_official_fetch_uses_v1_worlds_route(self):
+        import world_directory
+        observed = {}
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def read(self, _limit): return json.dumps({"worlds": []}).encode()
+        def open_request(request, timeout):
+            observed["url"] = request.full_url
+            observed["timeout"] = timeout
+            return Response()
+        with patch.object(world_directory.urllib.request, "urlopen", side_effect=open_request):
+            self.assertEqual(world_directory._fetch_remote(DRAGONWILDS_SYNC_NETWORK_URL, 2.0), [])
+        self.assertEqual(observed["url"], f"{DRAGONWILDS_SYNC_NETWORK_URL}/api/v1/worlds")
+
+    def test_profile_classification_retains_pvp(self):
+        value = normalize_world_classification({"game_mode": "creative", "pvp_enabled": True})
+        self.assertTrue(value["pvp_enabled"])
+        self.assertIn("pvp", classification_labels(value))
+
+    def test_official_modern_listing_maps_public_connect(self):
+        row = normalize_heartbeat({
+            "world_id": "dws-world-" + "a" * 32,
+            "world_name": "External World",
+            "is_sync_world": True,
+            "public_connect": {"host": "203.0.113.20", "port": 27051},
+            "heartbeat_authenticated": True,
+            "directory_verified": True,
+            "mods": ["UE4SS", "RuneSchema"],
+            "mod_summary": [{"name": "Example Mod", "loader": "ue4ss", "client_required": True}],
+            "classification": {"game_mode": "hardcore", "pvp_enabled": True},
+        }, source="directory:official")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["external_ip"], "203.0.113.20")
+        self.assertEqual(row["sync_port"], 27051)
+        self.assertTrue(row["directory_verified"])
+        self.assertEqual(row["mod_summary"][0]["name"], "Example Mod")
+        self.assertTrue(row["classification"]["pvp_enabled"])
+
+    def test_signed_heartbeat_online_is_separate_from_route_probe(self):
+        world = _sync_directory_world({
+            "world_name": "Signed World",
+            "fingerprint_claimed": "dws1-" + "b" * 24,
+            "external_ip": "203.0.113.21",
+            "sync_port": 27051,
+            "public_status": "online",
+            "directory_verified": True,
+            "verified": False,
+        })
+        self.assertTrue(world["status"]["online"])
+        self.assertTrue(world["shared"]["directory_verified"])
+        self.assertFalse(world["shared"]["route_verified"])
+        self.assertIn("direct Sync route", world["status"]["last_error"])
+
+    def test_public_snapshot_keeps_full_preview_contract(self):
+        service = object.__new__(DirectoryNetworkService)
+        service.ensure_world_identity = lambda *_args, **_kwargs: {
+            "world_id": "dws-world-" + "c" * 32,
+            "public_card": {"publish_connection": True, "show_mods": True, "public_address": "8.8.8.8"},
+        }
+        snapshot = service.build_public_snapshot("profile", "dedicated", {
+            "world_name": "Preview World",
+            "external_ip": "8.8.8.8",
+            "sync_port": 27111,
+            "game_port": 7788,
+            "mod_badges": ["UE4SS"],
+            "mod_summary": [{"name": "Required Mod", "loader": "ue4ss", "client_required": True}],
+            "classification": {"game_mode": "creative", "pvp_enabled": True},
+            "runtime_stack": {"ue4ss": {"channel": "stable"}},
+            "sync_enabled": True,
+            "game_enabled": False,
+        })
+        self.assertEqual(snapshot["world_name"], "Preview World")
+        self.assertEqual(snapshot["public_connect"], {"host": "8.8.8.8", "port": 27111})
+        self.assertEqual(snapshot["game_port"], 7788)
+        self.assertEqual(snapshot["mod_summary"][0]["name"], "Required Mod")
+        self.assertTrue(snapshot["classification"]["pvp_enabled"])
+        self.assertTrue(snapshot["sync_enabled"])
+        self.assertFalse(snapshot["game_enabled"])
+        self.assertEqual(HEARTBEAT_INTERVAL_SECONDS, 60)
+
+    def test_cloudflare_directory_exposes_all_three_live_broadcast_states(self):
+        worker = (Path(__file__).resolve().parents[1] / "cloudflare" / "world-directory" / "src" / "index.ts").read_text(encoding="utf-8")
+        self.assertIn('"sync-and-game"', worker)
+        self.assertIn('"sync-only"', worker)
+        self.assertIn('"game-only"', worker)
+        self.assertIn("launcher_broadcasting: launcherBroadcasting", worker)
+        self.assertIn("gameActive && !syncEnabled", worker)
+
+    def test_official_publish_uses_self_registering_operator_heartbeat(self):
+        requests = []
+
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def read(self, _limit=-1): return b'{"ok":true}'
+
+        service = object.__new__(DirectoryNetworkService)
+        service.endpoint = DRAGONWILDS_SYNC_NETWORK_URL
+        service.app_version = "test"
+        service.timeout = 2.0
+        service._lock = __import__("threading").RLock()
+        service._last_heartbeat_attempt = 0.0
+        service.http_open = lambda request, timeout=0: requests.append(request) or Response()
+        service.ensure_world_identity = lambda *_args, **_kwargs: {
+            "world_id": "dws-world-" + "c" * 32,
+            "public_directory_enabled": True,
+            "public_card": {"show_mods": True},
+        }
+        service._record_delivery = lambda *_args, **kwargs: {"last_http_status": kwargs.get("status", 0)}
+        with mock.patch("network_service.sign_directory_request", return_value={
+            "operator_fingerprint": "dwo1-" + "d" * 24,
+            "public_key": "publisher-key",
+            "signature": "publisher-signature",
+        }):
+            result = service.publish_official("profile", "dedicated", {
+                "name": "Existing World",
+                "fingerprint": "dws1-" + "e" * 24,
+            })
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        self.assertTrue(request.full_url.endswith("/api/v1/heartbeat"))
+        self.assertNotIn("/register", request.full_url)
+        self.assertEqual(json.loads(request.data)["world_id"], "dws1-" + "e" * 24)
+        headers = {key.casefold(): value for key, value in request.header_items()}
+        self.assertEqual(headers["x-dws-operator"], "dwo1-" + "d" * 24)
+        self.assertEqual(headers["x-dws-public-key"], "publisher-key")
+        self.assertGreater(service._last_heartbeat_attempt, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

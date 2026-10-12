@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, Icon, toast } from "@/components/ui";
+import { api, toast } from "@/components/ui";
 
 export default function PlayerCapPanel({ worldId }) {
   const [record, setRecord] = useState(null);
@@ -27,28 +27,29 @@ export default function PlayerCapPanel({ worldId }) {
     finally { setBusy(false); }
   };
 
-  return <section className="panel-inset" style={{ padding: "1rem", marginBottom: "1rem" }}>
-    <div className="heading" style={{ fontSize: ".95rem" }}>Dedicated server player cap</div>
-    <p className="subtle" style={{ fontSize: ".76rem", margin: ".3rem 0 .75rem" }}>
-      Each server profile owns its cap. RSDW writes <code>Game.ini</code> → <code>[/Script/Engine.GameSession]</code> → <code>MaxPlayers</code> when the server starts. Six players is the documented game limit; higher values are experimental and may require a compatible mod.
-    </p>
-    <div style={{ display: "flex", gap: ".6rem", alignItems: "end", flexWrap: "wrap" }}>
-      <label className="label" style={{ minWidth: 150 }}>Player cap
-        <input className="input" type="number" min="1" max="128" step="1" value={draft}
-          onChange={(event) => setDraft(event.target.value)} disabled={!record || busy} />
-      </label>
-      <button className="btn btn-primary" onClick={save} disabled={busy || !record || draft === String(record.maxPlayers)}>
-        <Icon name="download" size={14} /> {busy ? "Saving…" : "Save player cap"}
+  return <div>
+    <label className="label" htmlFor={`max-players-${worldId}`} style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+      <span>Max players</span><span className="subtle" style={{ fontSize: ".6rem" }}>GAME.INI</span>
+    </label>
+    <div style={{ display: "flex", gap: 6 }}>
+      <input id={`max-players-${worldId}`} className="input" type="number" min="1" max="128" step="1" value={draft}
+        onChange={(event) => setDraft(event.target.value)} disabled={!record || busy} style={{ minWidth: 72, flex: 1 }} />
+      <button className="btn btn-ghost" type="button" onClick={save} disabled={busy || !record || draft === String(record.maxPlayers)}
+        title="The player cap is saved separately from DedicatedServer.ini settings">
+        {busy ? "Saving…" : "Save cap"}
       </button>
-      {record?.running && <span className="chip" style={{ background: "var(--yellow)", color: "#1e1f22" }}>Restart required</span>}
     </div>
-    {record && <details style={{ marginTop: ".75rem" }}>
-      <summary className="subtle" style={{ cursor: "pointer", fontSize: ".73rem" }}>View Game.ini and its path</summary>
-      <div className="subtle" style={{ fontSize: ".68rem", overflowWrap: "anywhere", margin: ".5rem 0" }}>{record.path}</div>
-      <pre className="panel" style={{ fontSize: ".7rem", padding: ".6rem", maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap" }}>
+    <div className="subtle" style={{ fontSize: ".66rem", marginTop: 4 }}>
+      Per-server profile. Six is the standard limit; higher values may require a compatible mod.
+      {record?.running && <strong style={{ color: "var(--yellow)", marginLeft: 4 }}>Restart required.</strong>}
+    </div>
+    {record && <details style={{ marginTop: 4, fontSize: ".68rem" }}>
+      <summary className="subtle" style={{ cursor: "pointer" }}>Game.ini path and current content</summary>
+      <div className="subtle" style={{ overflowWrap: "anywhere", margin: ".4rem 0" }}>{record.path}</div>
+      <pre className="panel" style={{ fontSize: ".66rem", padding: ".5rem", maxHeight: 180, overflow: "auto", whiteSpace: "pre-wrap" }}>
         {record.content || "Game.ini does not exist yet. It will be created at the next server start."}
       </pre>
-      {!record.active && <div className="subtle" style={{ fontSize: ".7rem" }}>This install can be shared by several server profiles. The live file may currently belong to another profile.</div>}
+      {!record.active && <div className="subtle">The live file may currently belong to another server profile.</div>}
     </details>}
-  </section>;
+  </div>;
 }

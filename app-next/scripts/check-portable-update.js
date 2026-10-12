@@ -12,7 +12,7 @@ const version = require("../lib/appversion");
   const priorBranch = process.env.APP_MANAGER_BUILD_BRANCH;
   try {
     process.env.APP_MANAGER_BUILD_BRANCH = "main";
-    process.env.APP_MANAGER_APP_VERSION = "0.1.2-super-experimental";
+    process.env.APP_MANAGER_APP_VERSION = "0.1.3-super-experimental";
     assert.equal(version.currentBuildInfo().channel, "experimental");
     process.env.APP_MANAGER_APP_VERSION = "1.0.0";
     assert.equal(version.currentBuildInfo().channel, "stable");

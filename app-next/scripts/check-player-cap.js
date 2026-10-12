@@ -9,6 +9,10 @@ const dbm = require("../lib/db");
 const cap = require("../lib/player-cap");
 const ini = require("../lib/ini");
 const supervisor = require("../lib/supervisor");
+const settingsEditor = fs.readFileSync(path.join(__dirname, "../components/SettingsEditor.jsx"), "utf8");
+const capControl = fs.readFileSync(path.join(__dirname, "../components/PlayerCapPanel.jsx"), "utf8");
+assert(settingsEditor.includes('g.title === "Server" && <PlayerCapPanel worldId={worldId} />'), "Max players must appear in the Server settings grid");
+assert(capControl.includes("Save cap") && capControl.includes("Max players"), "Server population control is missing");
 
 const install = path.join(sandbox, "server");
 const worlds = new Map([

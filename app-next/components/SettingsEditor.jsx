@@ -133,7 +133,6 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
 
   return (
     <div>
-      <PlayerCapPanel worldId={worldId} />
       {!exists && <Notice color="var(--yellow)">{t("editor.noFileNotice")}</Notice>}
       <Notice color="var(--accent)">
         <Icon name="clock" size={14} /> <Trans i18nKey="editor.onlyChangedNotice" components={{ b: <b /> }} />
@@ -162,6 +161,7 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
         <div key={g.title} style={{ marginBottom: "1.4rem" }}>
           <h4 className="heading" style={{ fontSize: "0.85rem", margin: "0 0 0.6rem", color: "var(--ink-soft)" }}>{g.title}</h4>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.9rem" }}>
+            {g.title === "Server" && <PlayerCapPanel worldId={worldId} />}
             {g.fields.map((f) => {
               const isChanged = JSON.stringify(draft[f.key]) !== JSON.stringify(saved[f.key]);
               const isSet = present.has(f.key);

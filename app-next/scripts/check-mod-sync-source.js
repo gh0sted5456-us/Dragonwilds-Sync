@@ -9,6 +9,7 @@ const dbm = require("../lib/db");
 const lanes = require("../lib/mod-lanes");
 const steamlib = require("../lib/steamlibrary");
 const providers = require("../lib/mod-providers");
+const loaderMods = require("../lib/loader-mods");
 const manifest = require("../lib/sync/manifest");
 const syncAuth = require("../lib/sync/auth");
 
@@ -30,11 +31,16 @@ try {
   fs.writeFileSync(path.join(pakFolder, "ID.txt"), "# RSDW Sync unified mod identity v2\nSchema: DragonwildsSync.ID.v2\nModID: DwarfCannon\nName: Dwarf Cannon\nAuthor: Maxxfilth\nVersion: 1.2.3\nProvider: nexus\nProjectURL: https://www.nexusmods.com/runescapedragonwilds/mods/123\nProjectID: 123\nFileID: 456\nRuntimeRole: both\nHOTLOAD = NO\n");
   const ue4ssFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "ExampleUE4SS");
   const runeFolder = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "ExampleSchema");
+  const plainRuneFolder = path.join(path.dirname(runeFolder), "PlainSchema");
+  const unlistedRuneFolder = path.join(path.dirname(runeFolder), "UnlistedSchema");
   fs.mkdirSync(ue4ssFolder, { recursive: true }); fs.mkdirSync(runeFolder, { recursive: true });
+  fs.mkdirSync(plainRuneFolder); fs.mkdirSync(unlistedRuneFolder);
   const ue4ssList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "mods.txt");
-  const runeList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "runeschema.txt");
+  const runeList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "runeschema.txt");
+  const obsoleteRuneList = path.join(source, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "runeschema.txt");
   fs.writeFileSync(ue4ssList, "; Keep custom entries and load order\r\nExampleUE4SS : 0\r\n\r\n; Built-in keybinds, do not move up!\r\nKeybinds : 1\r\n");
-  fs.writeFileSync(runeList, "# RuneSchema addon list\nExampleSchema : 1\n");
+  fs.writeFileSync(runeList, "# RuneSchema addon list\nExampleSchema : 1\nPlainSchema : 1\n");
+  fs.writeFileSync(obsoleteRuneList, "ExampleSchema : 0\n");
   fs.writeFileSync(path.join(ue4ssFolder, "enabled.txt"), "");
   fs.writeFileSync(path.join(ue4ssFolder, "ID.txt"), "ModID: UEExample\nName: UE Example\nRuntimeRole: server\nHOTLOAD=YES\n");
   fs.writeFileSync(path.join(runeFolder, "ID.txt"), "ModID: RuneExample\nName: Rune Example\nRuntimeRole: client\nHOTLOAD=NO\n");
@@ -91,6 +97,14 @@ try {
   const runeFramework = required.mods.find((item) => item.type === "framework" && item.folderName === "RuneSchema");
   assert.equal(ue4ssMod?.loaderEnabled, true, "UE4SS enabled.txt marker was not detected");
   assert.equal(runeMod?.loaderEnabled, true, "RuneSchema list state was not detected");
+  assert.equal(runeMod?.loaderListFile, runeList, "RuneSchema status used the wrong enable list");
+  assert.equal(runeMod?.loaderBlockedByFramework, true, "RuneSchema addon should report its unlisted runtime as inactive");
+  assert.equal(required.mods.find((item) => item.folderName === "PlainSchema")?.type, "runeschema", "RuneSchema runtime should be inferred from the folder without ID.txt");
+  assert.equal(required.mods.find((item) => item.folderName === "PlainSchema")?.loaderEnabled, true, "RuneSchema mod without ID.txt should use the loader list");
+  assert.equal(required.mods.find((item) => item.folderName === "UnlistedSchema")?.loaderEnabled, false, "Unlisted RuneSchema folder should be inactive");
+  const ue4ssModsDir = path.dirname(path.dirname(path.dirname(runeList)));
+  assert.equal(loaderMods.state(ue4ssModsDir, "runeschema", "UnlistedSchema", path.join(path.dirname(runeList), "UnlistedSchema")).loaderEnabled, false, "Unlisted RuneSchema folders should not be treated as enabled");
+  assert.equal(loaderMods.state(ue4ssModsDir, "runeschema", "ExampleSchema", runeFolder, "ExampleSchema : 1\nexampleschema : 0\nExampleSchema : 1\n").loaderEnabled, false, "RuneSchema disabled duplicate must take precedence");
   lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, false);
   assert.equal(fs.existsSync(path.join(ue4ssFolder, "enabled.txt")), false, "UE4SS marker still bypasses the disabled list entry");
   assert(fs.existsSync(path.join(ue4ssFolder, "enabled.txt.rsdw-disabled")), "UE4SS marker was not preserved for re-enabling");
@@ -103,6 +117,7 @@ try {
   assert.match(fs.readFileSync(runeList, "utf8"), /ExampleSchema : 0/);
   lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, true);
   assert.match(fs.readFileSync(runeList, "utf8"), /ExampleSchema : 1/);
+  assert.match(fs.readFileSync(obsoleteRuneList, "utf8"), /ExampleSchema : 0/, "The obsolete parent list must remain untouched");
   lanes.setLoaderEnabled(worldId, "required", runeFramework.selectionKey, true);
   assert.match(fs.readFileSync(ue4ssList, "utf8"), /RuneSchema : 1\r\n(?:\r\n)?; Built-in keybinds/, "RuneSchema framework was not inserted before UE4SS keybinds");
   assert.throws(() => lanes.setLoaderEnabled(worldId, "required", mod.selectionKey, true), /not a detected loader-managed mod/, "PAK was accepted as a loader-controlled mod");
@@ -116,7 +131,7 @@ try {
   lanes.setLoaderEnabled(worldId, "required", ue4ssMod.selectionKey, true);
   assert(manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "UE Example"), "Enabled UE4SS mod was not published to player Sync");
   lanes.setSelections(worldId, [{ key: runeMod.selectionKey, scope: "both" }]);
-  const serverRuneList = path.join(server, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "runeschema.txt");
+  const serverRuneList = path.join(server, "RSDragonwilds", "Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", "mods", "runeschema.txt");
   assert.match(fs.readFileSync(serverRuneList, "utf8"), /ExampleSchema : 1/, "Managed RuneSchema state was not applied to the server");
   lanes.setLoaderEnabled(worldId, "required", runeMod.selectionKey, false);
   assert.match(fs.readFileSync(serverRuneList, "utf8"), /ExampleSchema : 0/, "RuneSchema disable was not applied to the server copy");

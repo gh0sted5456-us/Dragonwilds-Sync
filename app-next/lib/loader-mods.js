@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const MAX_LIST_BYTES = 2 * 1024 * 1024;
 
 function listFile(modsDir, kind) {
-  if (kind === "runeschema") return path.join(modsDir, "RuneSchema", "runeschema.txt");
+  if (kind === "runeschema") return path.join(modsDir, "RuneSchema", "mods", "runeschema.txt");
   if (kind === "ue4ss") return path.join(modsDir, "mods.txt");
   throw new Error("Unsupported mod loader");
 }
@@ -31,11 +31,14 @@ function parseEntry(line) {
   return match ? { name: match[2].trim(), enabled: match[4] === "1", match } : null;
 }
 
-function listedState(content, name) {
+function listedState(content, name, disabledWins = false) {
   let state = null;
   for (const line of content.split(/\r?\n/)) {
     const entry = parseEntry(line);
-    if (entry && entry.name.toLowerCase() === name.toLowerCase()) state = entry.enabled;
+    if (entry && entry.name.toLowerCase() === name.toLowerCase()) {
+      if (!entry.enabled && disabledWins) return false;
+      state = entry.enabled;
+    }
   }
   return state;
 }
@@ -47,11 +50,11 @@ function readControlList(modsDir, kind) {
 function state(modsDir, kind, name, modPath, listText) {
   const safeName = entryName(name);
   const file = listFile(modsDir, kind);
-  const listed = listedState(listText === undefined ? readList(file) : listText, safeName);
+  const listed = listedState(listText === undefined ? readList(file) : listText, safeName, kind === "runeschema");
   const marker = kind === "ue4ss" && modPath && fs.existsSync(path.join(modPath, "enabled.txt"));
   return {
-    loaderEnabled: marker ? true : listed,
-    loaderStateSource: marker ? "enabled.txt" : listed === null ? "unlisted" : path.basename(file),
+    loaderEnabled: marker ? true : listed === null && kind === "runeschema" ? false : listed,
+    loaderStateSource: marker ? "enabled.txt" : listed === null ? "not in loader list" : path.basename(file),
     loaderListFile: file,
     loaderEntryName: safeName,
   };

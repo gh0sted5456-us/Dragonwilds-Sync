@@ -335,7 +335,7 @@ function scanGameMods(input) {
       const modPath = path.join(ue4ssMods, entry.name);
       const identity = readModIdentity(modPath);
       const loaderState = loaderMods.state(ue4ssMods, "ue4ss", entry.name, modPath, ue4ssList);
-      if (type === "framework") runeFrameworkDisabled = loaderState.loaderEnabled === false;
+      if (type === "framework") runeFrameworkDisabled = loaderState.loaderEnabled !== true;
       detected.push({ key: `${type}:${platform.toLowerCase()}:${entry.name.toLowerCase()}`, name: identity?.name || entry.name, folderName: entry.name, modId: identity?.modId || entry.name, identity, type, location: platform, path: modPath, files: [], syncEligible: type === "ue4ss", ...loaderState });
     }
 

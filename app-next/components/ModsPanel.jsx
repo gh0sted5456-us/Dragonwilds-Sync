@@ -319,9 +319,11 @@ export default function ModsPanel({ worldId, running }) {
 function ModFolder({ mod, update, selection, busy, onToggle, onLoaderToggle, onScope, onExplore, onView, onDownload }) {
   const selected = !!selection;
   const scope = selection?.scope || "both";
+  const runtimeLabel = { runeschema: "RuneSchema", ue4ss: "UE4SS", framework: "RuneSchema runtime", pak: "PAK" }[mod.type] || mod.type;
+  const loaderLabel = mod.loaderEnabled === true ? "Enabled" : mod.loaderStateSource === "not in loader list" ? "Not enabled (no list entry)" : mod.loaderEnabled === false ? "Disabled" : "Status unknown";
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: "0.82rem", fontWeight: 720 }}>{mod.name}</div>
+      <div style={{ fontSize: "0.82rem", fontWeight: 720, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{mod.name}<span className="chip">{runtimeLabel}</span></div>
       {mod.identity && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "3px 0" }}>
         <span className="chip">ID · {mod.identity.modId}</span>
         {mod.identity.author && <span className="chip">BY {mod.identity.author}</span>}
@@ -333,8 +335,8 @@ function ModFolder({ mod, update, selection, busy, onToggle, onLoaderToggle, onS
         <span className="chip">{mod.identity.runtimeRole.toUpperCase()}</span><span className="chip">HOTLOAD {mod.identity.hotload ? "YES" : "NO"}</span>
       </div>}
       <div className="subtle" style={{ fontSize: "0.67rem", wordBreak: "break-all" }}>{mod.path}</div>
-      {mod.loaderListFile && <div className="subtle" style={{ fontSize: "0.67rem" }}>Loader: {mod.loaderEnabled === true ? "Enabled" : mod.loaderEnabled === false ? "Disabled" : "Not listed"} · {mod.loaderStateSource}</div>}
-      {mod.loaderBlockedByFramework && <div className="subtle" style={{ fontSize: "0.67rem", color: "var(--yellow)" }}>RuneSchema framework is disabled in UE4SS.</div>}
+      {mod.loaderListFile && <div className="subtle" style={{ fontSize: "0.67rem" }}>{runtimeLabel} status: {loaderLabel} · {mod.loaderStateSource}</div>}
+      {mod.loaderBlockedByFramework && <div className="subtle" style={{ fontSize: "0.67rem", color: "var(--yellow)" }}>RuneSchema runtime is not enabled in UE4SS.</div>}
     </div>
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
       {mod.loaderListFile && <button className={`btn ${mod.loaderEnabled === true ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onLoaderToggle}>{mod.loaderEnabled === true ? "Disable" : "Enable"}</button>}

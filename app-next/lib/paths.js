@@ -41,6 +41,7 @@ const P = {
   worldLogDir: (worldId) => ensure(path.join(dataDir(), "logs", worldId)),
   worldBackupDir: (worldId, custom) => ensure(path.join(backupsBase(custom), worldId)),
   worldSaveSlots: (worldId) => ensure(path.join(dataDir(), "save-slots", String(worldId))),
+  worldRepository: () => ensure(path.join(dataDir(), "world-repository")),
   clientProfiles: () => ensure(path.join(dataDir(), "player-profiles")),
   clientProfile: (profileId) => path.join(ensure(path.join(dataDir(), "player-profiles")), String(profileId || "profile").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "profile"),
   clientOriginals: () => ensure(path.join(dataDir(), "client-originals")),

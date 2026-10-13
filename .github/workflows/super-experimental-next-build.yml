@@ -86,6 +86,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-save-slots.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-world-repository.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-lifecycle-guard.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-direct-discovery.js

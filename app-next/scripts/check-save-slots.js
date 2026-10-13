@@ -52,7 +52,7 @@ const provision = require("../lib/provision");
   assert.equal(world.admin_password, "keep-admin");
   assert.equal(world.server_password, "keep-login");
   assert.equal(world.owner_id, "keep-owner");
-  assert.equal(world.default_world_name, "keep-world");
+  assert.equal(world.default_world_name, "original", "DefaultWorldName must follow the selected .sav so Dragonwilds loads it");
   assert.match(fs.readFileSync(config, "utf8"), /WorldPassword=keep-login/, "save-slot swap changed the server login configuration");
   console.log("World save slots: OK");
 })().finally(() => {

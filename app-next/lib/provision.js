@@ -171,7 +171,9 @@ function captureActiveSaves(world) {
 function listSaveSlots(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  captureActiveSaves(world);
+  // Reading this tab must not synchronously copy a large save while the game
+  // may be writing it. Capture the final copy once the process is down.
+  if (!require("./supervisor").isAlive(worldId)) captureActiveSaves(world);
   const live = liveSaveEntries(world);
   const selected = dbm.getSetting(activeSaveKey(worldId), null)?.name?.toLowerCase();
   // Existing installs may predate slot state. Dragonwilds loads the newest file,
@@ -262,6 +264,8 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
   const nonce = crypto.randomUUID();
   const incoming = path.join(path.dirname(saveGames), `.SaveGames.incoming-${nonce}`);
   const previous = path.join(path.dirname(saveGames), `.SaveGames.previous-${nonce}`);
+  const priorSelection = dbm.getSetting(activeSaveKey(worldId), null);
+  const priorWorldName = world.default_world_name;
   fs.mkdirSync(incoming, { recursive: true });
   const destination = path.join(incoming, activeSave);
 
@@ -282,10 +286,17 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
     }
     try {
       const verified = verifyActiveSaveSlot(worldId, activeSave);
+      // Dragonwilds also uses DefaultWorldName when choosing a save. Keeping
+      // the old name can make a correctly copied file appear to be ignored.
+      dbm.updateWorld(worldId, { default_world_name: path.basename(activeSave, path.extname(activeSave)) });
       dbm.setSetting(activeSaveKey(worldId), { schema: 1, name: activeSave, ...verified, activatedAt: Date.now() });
     } catch (error) {
       fs.rmSync(saveGames, { recursive: true, force: true });
       if (fs.existsSync(previous)) moveDirectory(previous, saveGames);
+      try {
+        dbm.updateWorld(worldId, { default_world_name: priorWorldName });
+        dbm.setSetting(activeSaveKey(worldId), priorSelection);
+      } catch {}
       throw error;
     }
   } catch (error) {
@@ -298,6 +309,7 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
     try { trashPath(previous); } catch {}
   }
 
+  serverProfiles.materializeActiveBestEffort(worldId);
   dbm.logEvent(worldId, "import", `Activated world save slot ${activeSave}; Server profile identity retained`);
   return { valid: true, activeSave, slots: listSaveSlots(worldId) };
 }
@@ -333,6 +345,27 @@ function stageSaveSlot(worldId, sourcePath) {
   return { ...check, slotName: check.activeSave };
 }
 
+function stageRepositorySave(worldId, repositoryId) {
+  if (!dbm.getWorld(worldId)) throw new Error("World not found");
+  const item = require("./world-repository").getWorld(repositoryId);
+  const vault = P.worldSaveSlots(worldId);
+  const original = safeSaveName(item.name);
+  const stem = path.basename(original, path.extname(original));
+  const existing = path.join(vault, original);
+  const slotName = fs.existsSync(existing) && fileDigest(existing) !== item.sha256
+    ? safeSaveName(`${stem}-${item.id.slice(0, 8)}.sav`)
+    : original;
+  const destination = path.join(vault, slotName);
+  const temporary = `${destination}.incoming-${crypto.randomUUID()}`;
+  try {
+    fs.copyFileSync(item.file, temporary);
+    if (fileDigest(temporary) !== item.sha256) throw new Error("Repository copy failed verification");
+    fs.copyFileSync(temporary, destination);
+    if (fileDigest(destination) !== item.sha256) throw new Error("Server save slot failed verification");
+  } finally { fs.rmSync(temporary, { force: true }); }
+  return { slotName, repositoryId: item.id, worldType: item.worldType };
+}
+
 async function importSave(worldId, sourcePath, { backupFirst = true } = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
@@ -353,5 +386,5 @@ function copyDir(src, dst) {
 module.exports = {
   createProfile, adoptExistingInstall,
   validateSaveSource, validateSaveZip: validateSaveSource, stageSaveSlot, importSave,
-  listSaveSlots, activateSaveSlot, verifyActiveSaveSlot, assertSelectedSaveReady, copyDir,
+  stageRepositorySave, listSaveSlots, activateSaveSlot, verifyActiveSaveSlot, assertSelectedSaveReady, copyDir,
 };

@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.6-super-experimental",
+  "version": "0.1.7-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",
@@ -37,6 +37,7 @@
     "test:profile-refresh": "node scripts/check-profile-refresh.js",
     "test:lifecycle": "node scripts/check-lifecycle-guard.js",
     "test:saves": "node scripts/check-save-slots.js",
+    "test:world-repository": "node scripts/check-world-repository.js",
     "test:discovery": "node scripts/check-direct-discovery.js",
     "test:contract": "node scripts/check-rsdw-revamp-contract.js",
     "test:update": "node scripts/check-portable-update.js",

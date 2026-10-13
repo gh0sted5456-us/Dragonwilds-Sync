@@ -212,6 +212,11 @@ async function startWorldUnlocked(worldId) {
   // active profile or spawning another dedicated server.
   require("./server-process-guard").assertNoConflictingServer(world);
 
+  // A running server keeps its world untouched. A queued selection is copied
+  // into this profile's SaveGames only after it has stopped, immediately before
+  // the next launch. Failure blocks launch instead of loading a fallback world.
+  await applyPendingWorldSave(worldId);
+
   // Scheduled, remote and shortcut starts must obey the same active-profile
   // contract as the GUI. This loads that profile's settings and marker first.
   require("./active-server-profile").activate(worldId);
@@ -440,6 +445,13 @@ async function stopWorldUnlocked(worldId, { graceful = true, waittime = 15 } = {
       dbm.logEvent(worldId, "settings", "Re-materialized saved Server profile after shutdown");
     }
   } catch {}
+  // A queued world can be placed as soon as the process is fully down. Stop
+  // remains successful if the copy fails; the pending choice is retained and
+  // startWorldUnlocked will retry (and fail closed rather than load the wrong save).
+  if (pendingWorldSave(worldId)) {
+    try { await applyPendingWorldSave(worldId); }
+    catch (error) { dbm.logEvent(worldId, "import", `Queued world save still pending: ${error.message}`); }
+  }
   return { stopped: true };
 }
 
@@ -479,69 +491,58 @@ function restartWorld(worldId, { waittime = 5, automatic = false } = {}) {
   });
 }
 
-// Save selection is a lifecycle operation, not a loose file copy. Nothing else
-// may start/restart this world between shutdown and the verified SaveGames swap.
-// If staging or verification fails, the server deliberately remains stopped so
-// Dragonwilds cannot create or load its fallback Standard world.
-function switchWorldSave(worldId, slotName, { startAfter = true, waittime = 5 } = {}) {
-  S.desired.set(worldId, startAfter ? "running" : "stopped");
-  S.owned.delete(worldId);
-  S.restartAttempts.delete(worldId);
-  return serializeLifecycle(worldId, `switch-save:${slotName}`, async () => {
-    const provision = require("./provision");
-    const wasRunning = isAlive(worldId);
-    try {
-      if (wasRunning) await stopWorldUnlocked(worldId, { graceful: true, waittime });
-      const activated = await provision.activateSaveSlot(worldId, slotName, { backupFirst: true });
-      const verified = provision.verifyActiveSaveSlot(worldId, slotName);
-      dbm.logEvent(worldId, "import", `Verified active world save ${verified.activeSave} (${verified.size} bytes)`);
-      if (!startAfter) {
-        S.desired.set(worldId, "stopped");
-        return { ...activated, verified, wasRunning, restarted: false };
-      }
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      const launch = await startWorldUnlocked(worldId);
-      if (!launch.started) throw new Error(`Selected save was staged, but the server did not start: ${launch.reason || "unknown reason"}`);
-      return { ...activated, verified, wasRunning, restarted: !!launch.started, launch };
-    } catch (error) {
-      S.desired.set(worldId, "stopped");
-      S.owned.delete(worldId);
-      dbm.updateWorld(worldId, { status: isAlive(worldId) ? "running" : "stopped" });
-      dbm.logEvent(worldId, "import", `World save switch aborted: ${error.message}`);
-      throw error;
+function pendingSaveKey(worldId) { return `pendingWorldSave:${worldId}`; }
+function pendingWorldSave(worldId) { return dbm.getSetting(pendingSaveKey(worldId), null); }
+
+async function applySaveSelection(worldId, selection) {
+  const provision = require("./provision");
+  // Preserve the just-stopped live save before staging a repository item with
+  // the same filename. Otherwise activation's capture could overwrite the new
+  // item in the slot vault before it reaches SaveGames.
+  provision.listSaveSlots(worldId);
+  const slotName = selection.repositoryId
+    ? provision.stageRepositorySave(worldId, selection.repositoryId).slotName
+    : selection.slotName;
+  const activated = await provision.activateSaveSlot(worldId, slotName, { backupFirst: true });
+  const verified = provision.verifyActiveSaveSlot(worldId, slotName);
+  dbm.setSetting(pendingSaveKey(worldId), null);
+  dbm.logEvent(worldId, "import", `Verified selected world save ${verified.activeSave} (${verified.size} bytes)`);
+  return { ...activated, verified, queued: false, restarted: false };
+}
+
+async function applyPendingWorldSave(worldId) {
+  const selection = pendingWorldSave(worldId);
+  if (!selection) return null;
+  if (isAlive(worldId)) throw new Error("Cannot replace a running server's world save");
+  return applySaveSelection(worldId, selection);
+}
+
+function selectWorldSave(worldId, selection) {
+  if (!dbm.getWorld(worldId)) return Promise.reject(new Error("World not found"));
+  if (!selection || (!selection.slotName && !selection.repositoryId)) return Promise.reject(new Error("Choose a save slot or repository world"));
+  return serializeLifecycle(worldId, "select-world-save", async () => {
+    // Validate before recording a durable pending request.
+    if (selection.repositoryId) require("./world-repository").getWorld(selection.repositoryId);
+    else {
+      const slot = require("./provision").listSaveSlots(worldId).find((item) => item.name === selection.slotName);
+      if (!slot) throw new Error("Save slot not found");
     }
+    if (isAlive(worldId)) {
+      dbm.setSetting(pendingSaveKey(worldId), selection);
+      dbm.logEvent(worldId, "import", "World save selection queued for the next server start; running server was not interrupted");
+      return { queued: true, restarted: false, pending: selection };
+    }
+    return applySaveSelection(worldId, selection);
   });
 }
 
-function importAndSwitchWorldSave(worldId, sourcePath, options = {}) {
-  const { startAfter = true, waittime = 5 } = options;
-  S.desired.set(worldId, startAfter ? "running" : "stopped");
-  S.owned.delete(worldId);
-  S.restartAttempts.delete(worldId);
-  return serializeLifecycle(worldId, `import-save:${sourcePath}`, async () => {
-    const provision = require("./provision");
-    const wasRunning = isAlive(worldId);
-    try {
-      if (wasRunning) await stopWorldUnlocked(worldId, { graceful: true, waittime });
-      const staged = provision.stageSaveSlot(worldId, sourcePath);
-      const activated = await provision.activateSaveSlot(worldId, staged.slotName, { backupFirst: true });
-      const verified = provision.verifyActiveSaveSlot(worldId, staged.slotName);
-      if (!startAfter) {
-        S.desired.set(worldId, "stopped");
-        return { ...activated, verified, wasRunning, restarted: false };
-      }
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      const launch = await startWorldUnlocked(worldId);
-      if (!launch.started) throw new Error(`Imported save was staged, but the server did not start: ${launch.reason || "unknown reason"}`);
-      return { ...activated, verified, wasRunning, restarted: !!launch.started, launch };
-    } catch (error) {
-      S.desired.set(worldId, "stopped");
-      S.owned.delete(worldId);
-      dbm.updateWorld(worldId, { status: isAlive(worldId) ? "running" : "stopped" });
-      dbm.logEvent(worldId, "import", `World save import aborted: ${error.message}`);
-      throw error;
-    }
-  });
+function switchWorldSave(worldId, slotName) {
+  return selectWorldSave(worldId, { slotName });
+}
+
+async function importAndSwitchWorldSave(worldId, sourcePath) {
+  const item = require("./world-repository").importWorld(sourcePath);
+  return selectWorldSave(worldId, { repositoryId: item.id });
 }
 
 // ---- Crash guardian (spec §9) ----
@@ -619,7 +620,7 @@ function splitLines(buf) {
 
 module.exports = {
   serverBinary, shippingBinary, hideConsoleEnabled, buildArgs, startWorld, stopWorld, restartWorld,
-  switchWorldSave, importAndSwitchWorldSave,
+  switchWorldSave, importAndSwitchWorldSave, selectWorldSave, pendingWorldSave,
   isRunning, isAlive, pidAlive, getLogs, subscribe, pushLog, ensureGuardian, stopManagedWorlds,
   __testing: { serializeLifecycle },
 };

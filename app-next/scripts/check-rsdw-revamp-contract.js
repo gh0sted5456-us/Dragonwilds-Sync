@@ -249,7 +249,9 @@ function contains(rel, needle, message) {
   contains("lib/supervisor.js", "provision.verifyActiveSaveSlot");
   contains("electron/preload.js", "pickWorldSave");
   contains("electron/main.js", 'ipcMain.handle("pick-world-save"');
-  contains("components/WorldSaveSlotsPanel.jsx", "check.activeSave");
+  contains("components/WorldSaveSlotsPanel.jsx", "World Repository");
+  contains("components/WorldSaveSlotsPanel.jsx", "Queue swap");
+  contains("lib/supervisor.js", "applyPendingWorldSave(worldId)");
   contains("components/SettingsEditor.jsx", "<WorldSaveSlotsPanel");
   contains("lib/supervisor.js", "assertSelectedSaveReady(worldId)");
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 const provision = require("@/lib/provision");
 const dbm = require("@/lib/db");
 const sup = require("@/lib/supervisor");
+const repository = require("@/lib/world-repository");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(req, { params }) {
     let selectedSaveError = null;
     try { provision.assertSelectedSaveReady(params.id); }
     catch (error) { selectedSaveError = error.message; }
-    return NextResponse.json({ ok: true, slots, selectedSaveError, running: sup.isAlive(params.id) });
+    return NextResponse.json({ ok: true, slots, repository: repository.listWorlds(), pending: sup.pendingWorldSave(params.id), selectedSaveError, running: sup.isAlive(params.id) });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   }
@@ -28,7 +29,9 @@ export async function POST(req, { params }) {
   if (denied) return denied;
   try {
     const body = await req.json();
-    const result = await sup.switchWorldSave(params.id, body.name, { startAfter: body.startAfter !== false });
+    const result = body.repositoryId
+      ? await sup.selectWorldSave(params.id, { repositoryId: body.repositoryId })
+      : await sup.switchWorldSave(params.id, body.name);
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });

@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const AdmZip = require("adm-zip");
 const dbm = require("./db");
 const { P } = require("./paths");
+const { trashPath } = require("./trash");
 
 const CATALOG_KEY = "worldRepository:v1";
 const MAX_SAVE_BYTES = 512 * 1024 * 1024;
@@ -136,4 +137,20 @@ function setWorldType(id, worldType) {
   return item;
 }
 
-module.exports = { listWorlds, getWorld, importWorld, setWorldType, detectWorldType, digestFile };
+function removeWorld(id) {
+  const items = catalog();
+  const item = items.find((entry) => entry.id === id);
+  if (!item) throw new Error("Repository world not found");
+  // A queued swap still needs this source. Already activated server copies are
+  // independent and remain untouched when the shared repository entry goes.
+  for (const world of dbm.listWorlds()) {
+    if (dbm.getSetting(`pendingWorldSave:${world.world_id}`, null)?.repositoryId === id) {
+      throw new Error("This world is queued for a server. Choose another world there before deleting it from the repository.");
+    }
+  }
+  trashPath(repositoryPath(id));
+  saveCatalog(items.filter((entry) => entry.id !== id));
+  return item;
+}
+
+module.exports = { listWorlds, getWorld, importWorld, setWorldType, removeWorld, detectWorldType, digestFile };

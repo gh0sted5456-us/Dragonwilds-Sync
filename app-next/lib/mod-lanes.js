@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const dbm = require("./db");
 const steamlib = require("./steamlibrary");
 const loaderMods = require("./loader-mods");
+const forks = require("./server-forks");
 const { trashPath } = require("./trash");
 
 const LANES = ["server", "required", "steam", "gamepass"];
@@ -77,12 +78,106 @@ function status(worldId) {
   const selected = new Map(modSelections.map((item) => [item.key, item]));
   const laneRoots = roots(worldId);
   const pakInstallMode = readPakInstallMode(worldId);
+  const world = dbm.getWorld(worldId);
+  const coreDir = dbm.getSetting("applicationSetup:serverDir", null);
   return {
     modLanes: LANES.map((lane) => scanLane(lane, laneRoots[lane], selected, pakInstallMode)),
     modSelections,
     modLaneSelections: modSelections.map((item) => item.key),
     pakInstallMode,
+    canDeleteServerMods: canDeleteServerFiles(world, coreDir),
   };
+}
+
+function canDeleteServerFiles(world, coreDir) {
+  if (!coreDir || !forks.managedFork(world, coreDir)) return false;
+  const ledger = forks.readLedger(world.install_dir);
+  return !!(ledger?.coreDir && path.resolve(ledger.coreDir).toLowerCase() === path.resolve(coreDir).toLowerCase());
+}
+
+function checkedDeleteTargets(world, mod) {
+  const game = serverGameRoot(world.install_dir);
+  const allowed = mod.type === "pak"
+    ? [path.join(game, "Content", "Paks", "~mods"), path.join(game, "Content", "Paks", "LogicMods")]
+    : mod.type === "ue4ss"
+      ? [path.join(game, "Binaries", mod.location, "ue4ss", "Mods")]
+      : [path.join(game, "Binaries", mod.location, "ue4ss", "Mods", "RuneSchema", "mods")];
+  const targets = mod.type === "pak" ? mod.files || [] : [mod.path];
+  if (!targets.length) throw new Error("No mod files remain to delete.");
+  const safe = [];
+  for (const target of targets) {
+    const absolute = path.resolve(target);
+    const parent = mod.type === "pak" ? path.dirname(absolute) : path.dirname(absolute);
+    if (!allowed.some((base) => {
+      const relative = path.relative(base, absolute);
+      return relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+        && (mod.type !== "pak" || path.dirname(relative) === "." || path.dirname(path.dirname(relative)) === ".");
+    })) throw new Error("The detected mod is outside a supported server mod folder.");
+    if (!fs.existsSync(absolute)) throw new Error(`Mod file disappeared: ${absolute}`);
+    const anchor = allowed.find((base) => {
+      const relative = path.relative(base, absolute);
+      return relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    });
+    for (let current = absolute; path.resolve(current) !== path.resolve(anchor); current = path.dirname(current)) {
+      if (fs.lstatSync(current).isSymbolicLink()) throw new Error("Linked mod paths cannot be deleted by the launcher.");
+    }
+    if (fs.lstatSync(anchor).isSymbolicLink() || fs.realpathSync(absolute).toLowerCase() !== absolute.toLowerCase()) {
+      throw new Error("Linked or redirected mod paths cannot be deleted by the launcher.");
+    }
+    if (mod.type === "pak" && !/\.(?:pak|utoc|ucas|sig)$/i.test(absolute)) throw new Error("Only PAK triplet files can be deleted here.");
+    if (mod.type !== "pak" && path.resolve(parent).toLowerCase() !== path.resolve(allowed[0]).toLowerCase()) {
+      throw new Error("Only a detected direct mod entry can be deleted.");
+    }
+    safe.push(absolute);
+  }
+  return safe;
+}
+
+function deleteServerMod(worldId, key, { trash = trashPath } = {}) {
+  const world = dbm.getWorld(worldId);
+  const coreDir = dbm.getSetting("applicationSetup:serverDir", null);
+  if (!canDeleteServerFiles(world, coreDir)) throw new Error("File deletion is available only for an RSDW-managed Server profile linked to this core.");
+  const snapshot = status(worldId);
+  const mod = snapshot.modLanes.find((lane) => lane.id === "server")?.mods.find((item) => item.selectionKey === key);
+  if (!mod || !mod.syncEligible || !["pak", "ue4ss", "runeschema"].includes(mod.type)) throw new Error("The selected server mod no longer exists or is not deletable.");
+  const targets = checkedDeleteTargets(world, mod);
+  const stage = path.join(path.dirname(world.install_dir), `.${world.world_id}.mod-delete-${crypto.randomUUID()}`);
+  const moved = [];
+  let removedEntry = null;
+  try {
+    fs.mkdirSync(stage);
+    for (let index = 0; index < targets.length; index++) {
+      const parked = path.join(stage, `${index}-${path.basename(targets[index])}`);
+      fs.renameSync(targets[index], parked);
+      moved.push({ original: targets[index], parked });
+    }
+    if (mod.type !== "pak") {
+      const modsDir = mod.type === "ue4ss" ? path.dirname(mod.path) : path.dirname(path.dirname(path.dirname(mod.path)));
+      removedEntry = loaderMods.removeEntry(modsDir, mod.type, mod.loaderEntryName);
+    }
+    trash(stage);
+  } catch (error) {
+    try { loaderMods.restoreRemovedEntry(removedEntry); } catch {}
+    for (const item of moved.reverse()) {
+      try { if (fs.existsSync(item.parked)) fs.renameSync(item.parked, item.original); } catch {}
+    }
+    try { if (fs.existsSync(stage) && !fs.readdirSync(stage).length) fs.rmdirSync(stage); } catch {}
+    throw error;
+  }
+  const removed = new Set(targets.map((target) => path.resolve(target).toLowerCase()));
+  const selections = snapshot.modSelections.filter((item) => {
+    if (item.key === key) return false;
+    if (item.scope === "client") return true;
+    const source = snapshot.modLanes.flatMap((lane) => lane.mods).find((row) => row.selectionKey === item.key);
+    if (!source) return true;
+    const destination = destinationFor(world.install_dir, source, worldId);
+    const destinations = source.type === "pak" ? (source.files || []).map((file) => path.join(destination, path.basename(file))) : [destination];
+    return !destinations.some((target) => removed.has(path.resolve(target).toLowerCase()));
+  });
+  dbm.setSetting(selectionKey(worldId), selections);
+  dbm.setSetting(ledgerKey(worldId), readList(ledgerKey(worldId)).filter((target) => !removed.has(path.resolve(target).toLowerCase())));
+  dbm.logEvent(worldId, "mod", `Moved ${mod.name} (${targets.length} file${targets.length === 1 ? "" : "s"}) from this Server profile to the OS trash`);
+  return { removedFiles: targets.length, name: mod.name, ...status(worldId) };
 }
 
 function serverGameRoot(installDir) { const nested = path.join(installDir, "RSDragonwilds"); return fs.existsSync(nested) ? nested : installDir; }
@@ -352,4 +447,4 @@ function writeEditableFile(worldId, lane, relative, content, expectedEtag) {
   return readEditableFile(worldId, lane, relative);
 }
 
-module.exports = { status, setSelections, setLoaderEnabled, selectedMods, browse, readEditableFile, writeEditableFile, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };
+module.exports = { status, setSelections, setLoaderEnabled, deleteServerMod, selectedMods, browse, readEditableFile, writeEditableFile, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };

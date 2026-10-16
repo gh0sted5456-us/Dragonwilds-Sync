@@ -317,7 +317,8 @@ function scanGameMods(input) {
     const dir = path.join(project, "Content", "Paks", folderName);
     for (const group of pakGroups(dir)) {
       const rawName = group.name;
-      detected.push({ key: `pak:${folderName.toLowerCase()}:${rawName.toLowerCase()}`, name: group.identity?.name || rawName, folderName: rawName, modId: group.identity?.modId || rawName, identity: group.identity, type: "pak", location: folderName, path: group.path, files: group.files, syncEligible: true });
+      const subfolder = path.relative(dir, group.path).split(path.sep).join("/").toLowerCase();
+      detected.push({ key: `pak:${folderName.toLowerCase()}:${rawName.toLowerCase()}${subfolder ? `:${subfolder}` : ""}`, name: group.identity?.name || rawName, folderName: rawName, modId: group.identity?.modId || rawName, identity: group.identity, type: "pak", location: folderName, path: group.path, files: group.files, syncEligible: true });
     }
   }
 

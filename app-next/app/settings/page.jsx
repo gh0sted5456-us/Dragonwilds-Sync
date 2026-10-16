@@ -5,12 +5,18 @@ import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import { PageHeader } from "@/components/PageChrome";
 import { APP_THEMES, useTheme } from "@/components/ThemeProvider";
-// Pal name mapping removed for RSDW — Pals are not a thing in Dragonwilds.
+const { readSettingsSection, settingsSectionUrl } = require("@/lib/ui-navigation");
+const CATEGORY_GROUPS = [
+  { id: "workspace", title: "Make it your workspace", description: "Setup, appearance, and desktop behavior." },
+  { id: "hosting", title: "Hosting & data", description: "Server visibility and safe storage." },
+  { id: "maintenance", title: "Connections & maintenance", description: "Mod providers, updates, and system health." },
+];
 
 export default function SettingsPage() {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [s, setS] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [steam, setSteam] = useState(null);
   const [saving, setSaving] = useState(false);
   const [backupLoc, setBackupLoc] = useState(null);
@@ -23,9 +29,10 @@ export default function SettingsPage() {
   const [curseForgeApiKey, setCurseForgeApiKey] = useState("");
   const [section, setSection] = useState(null); // null = category list; otherwise the open category id
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
+  const loadSettings = () => api("/api/settings").then((r) => { setS(r.settings); setLoadError(""); }).catch((e) => setLoadError(e.message));
 
   useEffect(() => {
-    api("/api/settings").then((r) => setS(r.settings)).catch(() => {});
+    void loadSettings();
     api("/api/steamcmd").then(setSteam).catch(() => {});
     api("/api/settings/backup-dir").then((r) => { setBackupLoc(r.backup); setBackupPath(r.backup.custom ? r.backup.path : ""); }).catch(() => {});
     const readDesktopFlag = async (method, fallback, setter) => {
@@ -41,9 +48,17 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("section");
-    if (["tools", "appearance", "server", "integrations", "updates", "backups", "desktop", "system"].includes(requested)) setSection(requested);
+    const restore = () => setSection(readSettingsSection(window.location.search));
+    restore();
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
   }, []);
+  const selectSection = (next) => {
+    setSection(next);
+    const url = settingsSectionUrl(window.location.href, next);
+    if (next) window.history.pushState({}, "", url);
+    else window.history.replaceState({}, "", url);
+  };
 
   const loadComponentUpdates = async (force = false) => {
     setComponentChecking(true);
@@ -104,20 +119,20 @@ export default function SettingsPage() {
     if (section === "updates" && !componentUpdates && !componentChecking) loadComponentUpdates(false);
   }, [section]);
 
-  if (!s) return <div className="subtle" style={{ fontWeight: 700 }}>{t("common.loading")}</div>;
+  if (!s) return loadError ? <div className="panel" style={{ padding: "1.5rem" }} role="alert"><h2 className="heading">Settings could not be loaded</h2><p className="subtle">{loadError}</p><button className="btn btn-primary" onClick={() => { setLoadError(""); void loadSettings(); }}>Try again</button></div> : <div className="subtle" role="status">{t("common.loading")}</div>;
 
   // Settings are grouped into categories. The landing view is a clickable list; picking
   // one drills into just that category's panels with a back button, so no single page is
   // crammed. `electronOnly` categories are hidden in the browser build.
   const CATEGORIES = [
-    { id: "tools", icon: "grid" },
-    { id: "appearance", icon: "sun" },
-    { id: "server", icon: "terminal" },
-    { id: "integrations", icon: "globe" },
-    { id: "updates", icon: "refresh" },
-    { id: "backups", icon: "download" },
-    { id: "desktop", icon: "settings" },
-    { id: "system", icon: "cpu" },
+    { id: "tools", icon: "grid", group: "workspace" },
+    { id: "appearance", icon: "sun", group: "workspace" },
+    { id: "desktop", icon: "settings", group: "workspace" },
+    { id: "server", icon: "terminal", group: "hosting" },
+    { id: "backups", icon: "download", group: "hosting" },
+    { id: "integrations", icon: "globe", group: "maintenance" },
+    { id: "updates", icon: "refresh", group: "maintenance" },
+    { id: "system", icon: "cpu", group: "maintenance" },
   ];
   const cats = CATEGORIES.filter((c) => !c.electronOnly || isElectron);
 
@@ -125,10 +140,13 @@ export default function SettingsPage() {
   if (!section) {
     return (
       <div>
-        <PageHeader eyebrow="RSDW SYNC" title={t("settings.title")} description="Application tools, server behavior, integrations, updates, backups, and desktop preferences." icon="settings" />
-        <div className="settings-category-grid">
-          {cats.map((c) => (
-            <button key={c.id} className="menu-card" onClick={() => setSection(c.id)}>
+        <PageHeader eyebrow="YOUR WORKSPACE" title={t("settings.title")} description="Keep the launcher configured around how you play and host." icon="settings" />
+        <div className="settings-groups">
+        {CATEGORY_GROUPS.map((group) => <section key={group.id} aria-labelledby={`settings-group-${group.id}`}>
+          <div className="settings-group-heading"><h2 id={`settings-group-${group.id}`}>{group.title}</h2><p>{group.description}</p></div>
+          <div className="settings-category-grid">
+          {cats.filter((item) => item.group === group.id).map((c) => (
+            <button key={c.id} className="menu-card" onClick={() => selectSection(c.id)}>
               <span className="menu-card-icon">
                 <Icon name={c.icon} size={19} />
               </span>
@@ -144,6 +162,8 @@ export default function SettingsPage() {
               <Icon name="chevronRight" size={18} />
             </button>
           ))}
+          </div>
+        </section>)}
         </div>
       </div>
     );
@@ -152,21 +172,21 @@ export default function SettingsPage() {
   // Detail: one category's panels, with a back button to the menu.
   return (
     <div>
-      <button className="page-back" onClick={() => setSection(null)}>
+      <button className="page-back" onClick={() => selectSection(null)}>
         <Icon name="back" size={16} /> {t("settings.title")}
       </button>
       <PageHeader eyebrow="SETTINGS" title={section === "tools" ? "Application tools" : t(`settings.cat.${section}`)} description={section === "tools" ? "Machine setup, authenticated Sync access, save maintenance, and application activity." : t(`settings.cat.${section}Desc`)} icon={cats.find((item) => item.id === section)?.icon || "settings"} />
 
-      {section === "tools" && <div style={{ display: "grid", gap: 10, maxWidth: 760 }}>
+      {section === "tools" && <div className="settings-tools-grid">
         <SettingsTool href="/setup" icon="settings" title="Application Setup" detail="Configure SteamCMD, dedicated server files, and Steam, Epic, or Game Pass play lanes." />
         <SettingsTool href="/remote-access" icon="sync" title="Sync & Remote Access" detail="Control local-network access and the authenticated service used for World manifests and downloads." />
-        <SettingsTool href="/save-cleaner" icon="shield" title="Player & World Save Cleaner" detail="Preview registry-orphaned player records or safely rebuild a World's disposable SPUD cache, with progress and recovery backups." />
+        <SettingsTool href="/save-cleaner" icon="shield" title="Player & World Save Tools" detail="Review player cleanup, inspect worlds, archive rebuildable cache, and import Steam saves into Game Pass." />
         <SettingsTool href="/usage" icon="activity" title="Activity" detail="Review application, server, synchronization, and download activity." />
       </div>}
 
       {section === "appearance" && (
       <div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
-        <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>{t("settings.appearance")}</h3>
+        <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Workspace colors</h3>
         <label className="label">{t("settings.theme")}</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(205px, 1fr))", gap: 10 }}>
           {APP_THEMES.map((option) => <button key={option.id} type="button" className="panel-inset" aria-pressed={theme === option.id} disabled={saving} onClick={() => { setTheme(option.id); void save({ theme: option.id }); }}
@@ -191,7 +211,7 @@ export default function SettingsPage() {
             {s.serverModeEnabled === true ? "Server Mode On" : "Server Mode Off"}
           </button>
           <span className="subtle" style={{ fontWeight: 650, fontSize: "0.78rem" }}>
-            {s.serverModeEnabled === true ? "Dedicated Servers are visible on the Worlds page." : "Only player Worlds are shown."}
+            {s.serverModeEnabled === true ? "Dedicated server profiles are managed in Host, separate from your player Worlds." : "Hosting is optional. Enable it to configure dedicated server profiles in Host."}
           </span>
         </div>
       </div>

@@ -70,9 +70,10 @@ function contains(rel, needle, message) {
   assert(!scheduler.includes("bcastTimer") && !scheduler.includes("on_join") && !scheduler.includes("idle_stop"), "obsolete background schedule loops must stay removed");
   assert(!read("app/api/worlds/route.js").includes("rest.metrics"), "World list must not block on legacy REST metrics");
   assert(!read("app/api/worlds/[id]/route.js").includes("rest.players"), "World detail must not block on legacy REST probes");
-  const home = read("app/page.jsx");
+  const home = read("components/PlayerWorldLibrary.jsx");
+  const host = read("components/HostLibrary.jsx");
   const adaptivePolling = read("components/useAdaptivePolling.js");
-  assert(home.includes('if (mode !== "server")') && home.includes("useAdaptivePolling(load, { visibleMs: 15000"), "dedicated-server polling must be scoped and throttled");
+  assert(!home.includes("useAdaptivePolling") && host.includes("useAdaptivePolling(load, { visibleMs: 15000") && host.includes("if (!enabled)"), "dedicated-server polling must stay scoped to Host and opt-in");
   assert(adaptivePolling.includes("await callback()") && adaptivePolling.includes('document.visibilityState === "hidden"'), "dedicated-server polling must remain serial and visibility-aware");
 
   const supervisor = contains("lib/supervisor.js", "owned: new Set()", "supervisor ownership registry missing");
@@ -113,11 +114,12 @@ function contains(rel, needle, message) {
 
 // UX contract: explicit Connect action, dark shell and update tracking.
 {
-  contains("app/page.jsx", "Connect to World");
+  contains("components/PlayerWorldLibrary.jsx", "Connect to World");
   assert(!fs.existsSync(path.join(root, "app/info/page.jsx")), "unfinished Helpy surface must stay removed");
   const splashShell = read("components/Shell.jsx");
   assert(splashShell.includes("const [visible, setVisible] = useState(true)") && !splashShell.includes("rsdw-splash-entered"), "manual launches must remain on the splash until Enter");
-  contains("app/globals.css", "--accent: #c1a56d");
+  contains("app/globals.css", "--accent: #b8a1ef");
+  contains("app/globals.css", ':root[data-rsdw-theme="gilded"]');
   const modsPanel = contains("components/ModsPanel.jsx", "Managed mods");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
   assert(modsPanel.includes('["client", "server", "both"]'), "managed mod Client / Server / Both controls missing");
@@ -150,22 +152,24 @@ function contains(rel, needle, message) {
   contains("lib/sync/client.js", '"X-RSDW-Client-Platform"');
   contains("lib/sync/manifest.js", "iconData: world.icon_data || null");
   contains("lib/sync/manifest.js", "bannerData: world.banner_data || null");
-  contains("app/page.jsx", "Send to Desktop");
-  contains("app/page.jsx", "worldIdentity");
-  contains("app/page.jsx", 'useLayoutPreference("server")');
-  contains("app/page.jsx", 'useLayoutPreference("player")');
-  contains("app/page.jsx", "rsdw-placard-grid");
-  contains("app/page.jsx", "10 * 60 * 1000");
-  contains("app/page.jsx", "HeartbeatStatus");
-  contains("app/page.jsx", "Scan for Worlds");
-  contains("app/page.jsx", "Check for Updates");
-  contains("app/page.jsx", 'url.searchParams.set("mode", next)');
+  contains("components/PlayerWorldLibrary.jsx", "Send to Desktop");
+  contains("components/PlayerWorldLibrary.jsx", "worldIdentity");
+  contains("components/HostLibrary.jsx", 'useLayoutPreference("server")');
+  contains("components/PlayerWorldLibrary.jsx", 'useLayoutPreference("player")');
+  contains("components/PlayerWorldLibrary.jsx", "rsdw-placard-grid");
+  contains("components/PlayerWorldLibrary.jsx", "10 * 60 * 1000");
+  contains("components/PlayerWorldLibrary.jsx", "HeartbeatStatus");
+  contains("components/PlayerWorldLibrary.jsx", "Scan for Worlds");
+  contains("components/PlayerWorldLibrary.jsx", "Check for Updates");
+  contains("app/page.jsx", 'redirect("/host")');
+  contains("components/PlayerWorldLibrary.jsx", "Scan LAN");
+  contains("components/HostLibrary.jsx", "LanDiscoveryPanel");
   contains("app/profile/page.jsx", "Back to World Management");
   contains("app/profiles/[id]/player/page.jsx", "Back to World Management");
-  contains("app/worlds/[id]/page.jsx", "Back to Server Management");
-  contains("app/worlds/[id]/page.jsx", 'href="/?mode=server"');
-  assert(!read("app/page.jsx").includes("/rsdw/rsdwl-icon.webp"), "obsolete launcher-file fallback icon must not return");
-  assert(!read("app/page.jsx").includes("portraitFor("), "unconfigured Worlds must use the RSDW logo instead of random portraits");
+  contains("app/worlds/[id]/page.jsx", "Back to Host");
+  contains("app/worlds/[id]/page.jsx", 'href="/host"');
+  assert(!read("components/PlayerWorldLibrary.jsx").includes("/rsdw/rsdwl-icon.webp"), "obsolete launcher-file fallback icon must not return");
+  assert(!read("components/PlayerWorldLibrary.jsx").includes("portraitFor("), "unconfigured Worlds must use the RSDW logo instead of random portraits");
   contains("app/profiles/[id]/player/page.jsx", 'identity.iconData || "/icon.png"');
   contains("components/LocalWorldScanner.jsx", "Add to My Worlds");
   contains("app/api/profiles/updates/route.js", "refreshProfile");
@@ -226,7 +230,8 @@ function contains(rel, needle, message) {
   contains("components/Shell.jsx", 'className="app-watermark"');
   contains("components/Shell.jsx", '/rsdw/app-icon.webp');
   contains("components/ModsPanel.jsx", '/rsdw/platforms/runeschema.png');
-  contains("app/page.jsx", '/rsdw/dragonwilds-wordmark.png');
+  contains("components/PlayerWorldLibrary.jsx", '/rsdw/dragonwilds-wordmark.png');
+  contains("components/HostLibrary.jsx", '/rsdw/dragonwilds-wordmark.png');
   assert(fs.existsSync(path.join(root, "public", "rsdw", "platforms", "runeschema.png")), "RuneSchema logo asset missing");
   assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-mark.png")), "Dragonwilds mark missing");
   assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-wordmark.png")), "Dragonwilds wordmark missing");
@@ -278,7 +283,7 @@ function contains(rel, needle, message) {
   const admin = read("components/AdminPanel.jsx");
   assert(!admin.includes("setAutostart"), "Server profile UI still exposes an automatic launch switch");
   assert(!admin.includes("community_server") && !admin.includes("legacy_perf_flags"), "Palworld-only profile controls must stay removed");
-  assert(!read("app/page.jsx").includes("community_server"), "Palworld public/private badge must stay removed");
+  assert(!read("components/HostLibrary.jsx").includes("community_server"), "Palworld public/private badge must stay removed");
 }
 
 

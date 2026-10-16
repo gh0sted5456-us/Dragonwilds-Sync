@@ -17,7 +17,7 @@ export async function GET(req, { params }) {
     let selectedSaveError = null;
     try { provision.assertSelectedSaveReady(params.id); }
     catch (error) { selectedSaveError = error.message; }
-    return NextResponse.json({ ok: true, slots, repository: repository.listWorlds(), pending: sup.pendingWorldSave(params.id), selectedSaveError, running: sup.isAlive(params.id) });
+    return NextResponse.json({ ok: true, slots, repository: repository.listWorlds(), pending: sup.pendingWorldSave(params.id), selectedSaveError, running: sup.isAlive(params.id), activeFilename: provision.profileSaveName(dbm.getWorld(params.id)) });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   }
@@ -32,6 +32,20 @@ export async function POST(req, { params }) {
     const result = body.repositoryId
       ? await sup.selectWorldSave(params.id, { repositoryId: body.repositoryId })
       : await sup.switchWorldSave(params.id, body.name);
+    return NextResponse.json({ ok: true, result });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  }
+}
+
+export async function DELETE(req, { params }) {
+  if (!dbm.getWorld(params.id)) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  const denied = ra.guardResponse(req, { worldId: params.id, tab: "backups", action: "world.delete-save", mutating: true });
+  if (denied) return denied;
+  try {
+    const body = await req.json();
+    if (!body.repositoryId && !body.name) throw new Error("Choose a repository world or server save alias");
+    const result = await sup.removeWorldSave(params.id, body.repositoryId ? { repositoryId: body.repositoryId } : { slotName: body.name });
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 400 });

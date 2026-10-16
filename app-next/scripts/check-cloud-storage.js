@@ -59,6 +59,26 @@ async function run() {
     const template = JSON.parse(fs.readFileSync(path.join(exportStatus.folder, "rsdw-manifest.json"), "utf8"));
     assert.equal(template.files[0].sha256, exportFile.sha256);
     assert.equal(template.files[0].url, "PASTE_PUBLIC_FILE_LINK");
+    const reconciledId = "cloud-reconcile-test";
+    cloud.save(reconciledId, { mode: "hybrid", provider: "dropbox", manifestUrl: "https://www.dropbox.com/scl/fi/token/rsdw-manifest.json?rlkey=key" });
+    cloudExport.start(reconciledId, {
+      manifest: { revision: "next-release", units: [{ files: [exportFile, { ...exportFile, target: "RSDragonwilds/Content/Paks/~mods/New.pak" }] }] },
+      resolver: () => ({ source }),
+      fetchManifest: async () => ({ schema: cloud.SCHEMA, files: [{ ...exportFile, url: "https://www.dropbox.com/scl/fi/token/Example.pak?rlkey=key" }] }),
+    });
+    let reconciled;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      reconciled = cloudExport.status(reconciledId);
+      if (["ready", "failed"].includes(reconciled.phase)) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(reconciled.phase, "ready", reconciled.error || "Reconciliation did not finish");
+    assert.equal(reconciled.reusedLinks, 1);
+    assert.equal(reconciled.missingLinks, 1);
+    const reconciledManifest = JSON.parse(fs.readFileSync(path.join(reconciled.folder, "rsdw-manifest.json"), "utf8"));
+    assert.equal(reconciledManifest.files[0].url, cloud.normalizePublicUrl("https://www.dropbox.com/scl/fi/token/Example.pak?rlkey=key", "dropbox"));
+    assert.equal(reconciledManifest.files[1].url, "PASTE_PUBLIC_FILE_LINK");
+    assert.equal(reconciledManifest.revision, "next-release");
     assert.throws(() => cloudExport.safeTarget("RSDragonwilds/../secret"), /Unsafe/);
     console.log("Cloud storage delivery: OK");
   } finally {

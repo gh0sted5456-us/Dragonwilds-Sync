@@ -161,6 +161,19 @@ export default function ModsPanel({ worldId, running }) {
     finally { setBusy(false); }
   }
 
+  async function deleteMod(mod) {
+    if (running || busy || !data?.canDeleteServerMods || mod.lane !== "server") return;
+    const contents = mod.type === "pak" ? `${mod.files?.length || 0} PAK companion files` : "the entire mod entry";
+    if (!window.confirm(`Delete ${mod.name} from this Server profile? This moves ${contents} to the OS Recycle Bin/Trash and removes its loader-list entry. It will not delete copies in other profiles or client installs.`)) return;
+    setBusy(true);
+    try {
+      const result = await api(`/api/worlds/${worldId}/mods`, { method: "DELETE", body: { selectionKey: mod.selectionKey } });
+      setData((current) => ({ ...current, ...result }));
+      toast(`${mod.name} moved to the OS Recycle Bin/Trash.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
+
   async function saveSelections(next) {
     setBusy(true);
     try {
@@ -258,7 +271,7 @@ export default function ModsPanel({ worldId, running }) {
           </div>
         </div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
-          Enable or disable UE4SS and RuneSchema mods in their loader lists. Manage mod is separate: choose Client, Server, or Both for synchronization. Disabled loader mods are not published in the downloadable manifest. Restart the game or server after changing loader state.
+          Enable or disable UE4SS and RuneSchema mods in their loader lists. Manage mod controls synchronization; Unmanage leaves the source alone but can remove a copy this launcher synchronized into the Server profile. For stopped RSDW-managed Server profiles, Delete files moves the actual mod to the OS Recycle Bin/Trash. Disabled loader mods are not published in the downloadable manifest. Restart the game or server after changing loader state.
         </p>
         <div className="panel-inset" style={{ padding: ".8rem", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 220 }}><strong>PAK destination</strong><div className="subtle" style={{ fontSize: ".7rem" }}>Choose classic <code>Content/Paks/~mods</code>, or let RuneSchema load each triplet from <code>RuneSchema/mods/&lt;ModID&gt;/paks</code>.</div></div>
@@ -301,7 +314,7 @@ export default function ModsPanel({ worldId, running }) {
               return <div key={type}>
                 <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
                 <div style={{ display: "grid", gap: 5 }}>
-                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} update={updates[mod.selectionKey]} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onLoaderToggle={() => toggleLoader(mod)} onScope={(scope) => setScope(mod, scope)} onExplore={() => browse(relativeModPath(lane.root, mod.path))} onView={() => viewProvider(mod)} onDownload={() => downloadProvider(mod)} />)}
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} update={updates[mod.selectionKey]} selection={selections.get(mod.selectionKey)} busy={busy || running} canDelete={lane.id === "server" && data.canDeleteServerMods} onDelete={() => deleteMod(mod)} onToggle={() => toggleFolder(mod)} onLoaderToggle={() => toggleLoader(mod)} onScope={(scope) => setScope(mod, scope)} onExplore={() => browse(relativeModPath(lane.root, mod.path))} onView={() => viewProvider(mod)} onDownload={() => downloadProvider(mod)} />)}
                 </div>
               </div>;
             })}
@@ -316,7 +329,7 @@ export default function ModsPanel({ worldId, running }) {
   );
 }
 
-function ModFolder({ mod, update, selection, busy, onToggle, onLoaderToggle, onScope, onExplore, onView, onDownload }) {
+function ModFolder({ mod, update, selection, busy, canDelete, onDelete, onToggle, onLoaderToggle, onScope, onExplore, onView, onDownload }) {
   const selected = !!selection;
   const scope = selection?.scope || "both";
   const runtimeLabel = { runeschema: "RuneSchema", ue4ss: "UE4SS", framework: "RuneSchema runtime", pak: "PAK" }[mod.type] || mod.type;
@@ -348,7 +361,8 @@ function ModFolder({ mod, update, selection, busy, onToggle, onLoaderToggle, onS
             {selected && <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
               {["client", "server", "both"].map((value) => <button key={value} className={`btn ${scope === value ? "btn-primary" : "btn-subtle"}`} style={{ padding: ".35rem .55rem" }} disabled={busy} onClick={() => onScope(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
             </div>}
-            <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Remove" : "Manage mod"}</button>
+            <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Unmanage" : "Manage mod"}</button>
+            {canDelete && <button className="btn btn-danger" disabled={busy} title="Move this profile's mod files to the OS Recycle Bin/Trash" onClick={onDelete}>Delete files</button>}
           </>
         : <span className="chip">Detected runtime</span>}
     </div>

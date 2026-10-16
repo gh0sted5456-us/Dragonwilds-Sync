@@ -3,6 +3,14 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("desktop", {
   isElectron: true,
+  nativeSplash: true,
+  getStartupState: () => ipcRenderer.invoke("startup-state"),
+  enterStartup: () => ipcRenderer.invoke("startup-enter"),
+  onStartupStatus: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("startup-status", handler);
+    return () => ipcRenderer.removeListener("startup-status", handler);
+  },
   platform: process.platform,   // "win32" | "linux" | "darwin" — drives the create-world default
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
   pickServerExecutable: () => ipcRenderer.invoke("pick-server-executable"),
@@ -10,7 +18,18 @@ contextBridge.exposeInMainWorld("desktop", {
   pickZip: () => ipcRenderer.invoke("pick-zip"),
   pickWorldSave: () => ipcRenderer.invoke("pick-world-save"),
   getSystemTheme: () => ipcRenderer.invoke("get-theme"),
+  setWindowTheme: (theme) => ipcRenderer.invoke("window-theme", theme),
   openPath: (p) => ipcRenderer.invoke("open-path", p),
+  cloudAccountStatus: () => ipcRenderer.invoke("cloud-account-status"),
+  connectCloudAccount: (request) => ipcRenderer.invoke("cloud-account-connect", request),
+  disconnectCloudAccount: (provider) => ipcRenderer.invoke("cloud-account-disconnect", provider),
+  publishCloudExport: (request) => ipcRenderer.invoke("cloud-publish", request),
+  setCloudAutoPublish: (request) => ipcRenderer.invoke("cloud-auto-publish", request),
+  onCloudPublishProgress: (listener) => {
+    const handler = (_event, progress) => listener(progress);
+    ipcRenderer.on("cloud-publish-progress", handler);
+    return () => ipcRenderer.removeListener("cloud-publish-progress", handler);
+  },
   openExternal: (value) => ipcRenderer.invoke("open-external", value),
   launchWorld: (request) => ipcRenderer.invoke("launch-world", request),
   openModProvider: (request) => ipcRenderer.invoke("open-mod-provider", request),

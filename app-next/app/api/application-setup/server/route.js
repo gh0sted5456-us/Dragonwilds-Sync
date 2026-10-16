@@ -92,15 +92,19 @@ export async function POST(req) {
       const log = (line) => jobs.logJob(jobId, line);
       try {
         jobs.setPhase(jobId, "starting", "Preparing SteamCMD");
-        await steam.ensureSteamCmd(log);
-        jobs.setPhase(jobId, "steamcmd", "Installing Dragonwilds dedicated server…");
-        const result = await steam.installOrUpdate(installDir, log, platform);
-        if (!result.ok) throw new Error(`SteamCMD failed (code ${result.code})${result.detail ? `: ${result.detail}` : ""}`);
+        jobs.setPhase(jobId, "steamcmd", "Installing/updating the shared Server Core…");
+        const result = await forks.updateCore(installDir, platform, { onLog: log });
         const check = detect.inspect(installDir);
         if (!check.valid) throw new Error(check.reason || "Dedicated-server installation could not be verified.");
         dbm.setSetting(DIR_KEY, check.installDir);
         dbm.setSetting(PLATFORM_KEY, platform);
-        // An update to the template cannot overwrite any private Server fork.
+        jobs.setPhase(jobId, "copy", "Refreshing stopped RSDW Server profiles…");
+        jobs.setProgress(jobId, 0, "RSDW: staging profile core files…");
+        const refreshed = await forks.refreshStoppedProfiles(check.installDir, {
+          onLog: log,
+          onProgress: ({ worldName, completed, total, file }) => jobs.setProgress(jobId, Math.round(100 * completed / Math.max(1, total)), `RSDW: ${worldName} · ${completed}/${total} files · ${file}`),
+        });
+        log(`RSDW: ${refreshed.filter((item) => item.updated).length} profile(s) refreshed; ${refreshed.filter((item) => item.pending).length} running profile(s) pending; ${refreshed.filter((item) => item.error).length} need review.`);
         log(`Verified dedicated server: ${check.binary}`);
         log(`Installed build: ${check.buildId || result.buildId || "unknown"}`);
         jobs.finishJob(jobId, true, { installDir: check.installDir, buildId: check.buildId || result.buildId || null });

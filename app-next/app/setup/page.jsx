@@ -120,7 +120,7 @@ function ServerSetup() {
         <button className="btn btn-ghost" onClick={async () => { const selected = await window.desktop?.pickDirectory?.(); if (selected) setProfileRoot(selected); }}><Icon name="folder" /> Browse</button>
         <button className="btn btn-primary" disabled={rootBusy || !state?.installDir} onClick={saveProfileRoot}>Save Folder</button>
       </div>
-      <p className="subtle" style={{ margin: "6px 0 0", fontSize: ".74rem" }}>Each new Server receives its own executable, mods, configuration, and saves. The shared SteamCMD lane is used only as a template.</p>
+      <p className="subtle" style={{ margin: "6px 0 0", fontSize: ".74rem" }}>New Server profiles default to an RSDW/Profiles branch beside the shared SteamCMD core. Core updates refresh stopped profiles' base files while preserving their saves and mods; running profiles wait until their next start. Existing profile locations are not moved.</p>
     </div>
     {state?.binary && <p className="subtle" style={{ fontFamily: "var(--font-mono)", fontSize: ".72rem", wordBreak: "break-all" }}>{state.binary}</p>}
     <div className="panel-inset" style={{ margin: "12px 0", padding: ".8rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

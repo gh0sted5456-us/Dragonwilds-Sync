@@ -126,6 +126,19 @@ function safeSaveName(value) {
   return name;
 }
 
+// Repository/slot names are aliases. The dedicated server must see only its
+// own stable profile name, regardless of the imported world's original name.
+function profileSaveName(world) {
+  let stem = String(world.display_name || "").trim().replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").replace(/[. ]+$/g, "").slice(0, 120);
+  if (!stem) throw new Error("Give this Server profile a name before selecting a world save");
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(stem)) stem = `_${stem}`;
+  return `${stem}.sav`;
+}
+
+function isWorldSaveName(name) {
+  return /\.sav$/i.test(name) && !/^EnhancedInputUserSettings\.sav$/i.test(name);
+}
+
 function activeSaveKey(worldId) {
   return `activeWorldSave:${worldId}`;
 }
@@ -139,7 +152,7 @@ function fileDigest(filePath) {
 function liveSaveEntries(world) {
   try {
     return fs.readdirSync(saveGamesDir(world), { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.sav$/i.test(entry.name))
+      .filter((entry) => entry.isFile() && isWorldSaveName(entry.name))
       .map((entry) => {
         const filePath = path.join(saveGamesDir(world), entry.name);
         return { name: entry.name, path: filePath, stat: fs.statSync(filePath) };
@@ -153,17 +166,19 @@ function liveSaveEntries(world) {
 function captureActiveSaves(world) {
   const vault = P.worldSaveSlots(world.world_id);
   const entries = liveSaveEntries(world);
-  const selected = dbm.getSetting(activeSaveKey(world.world_id), null)?.name?.toLowerCase();
+  const selection = dbm.getSetting(activeSaveKey(world.world_id), null);
+  const selected = selection?.name?.toLowerCase();
   const currentName = selected && entries.some((entry) => entry.name.toLowerCase() === selected)
     ? selected
     : entries[0]?.name?.toLowerCase();
   for (const entry of entries) {
-    const destination = path.join(vault, safeSaveName(entry.name));
+    const isCurrent = entry.name.toLowerCase() === currentName;
+    const alias = isCurrent && selected === currentName ? selection?.slotName || entry.name : entry.name;
+    const destination = path.join(vault, safeSaveName(alias));
     // The game loads the newest save. Refresh that slot on every clean stop so
     // progress made since the previous activation is not lost. Legacy folders
     // may contain several saves; retain those without overwriting their vault
     // copies unless they are the explicitly selected slot.
-    const isCurrent = entry.name.toLowerCase() === currentName;
     if (isCurrent || !fs.existsSync(destination)) fs.copyFileSync(entry.path, destination);
   }
 }
@@ -175,15 +190,16 @@ function listSaveSlots(worldId) {
   // may be writing it. Capture the final copy once the process is down.
   if (!require("./supervisor").isAlive(worldId)) captureActiveSaves(world);
   const live = liveSaveEntries(world);
-  const selected = dbm.getSetting(activeSaveKey(worldId), null)?.name?.toLowerCase();
+  const selection = dbm.getSetting(activeSaveKey(worldId), null);
+  const selected = selection?.name?.toLowerCase();
   // Existing installs may predate slot state. Dragonwilds loads the newest file,
   // so represent only that file as active instead of marking every .sav active.
   const activeName = selected
-    ? (live.some((entry) => entry.name.toLowerCase() === selected) ? selected : null)
+    ? (live.some((entry) => entry.name.toLowerCase() === selected) ? (selection.slotName || selection.name).toLowerCase() : null)
     : live[0]?.name?.toLowerCase();
   const vault = P.worldSaveSlots(worldId);
   return fs.readdirSync(vault, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.sav$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && isWorldSaveName(entry.name))
     .map((entry) => {
       const stat = fs.statSync(path.join(vault, entry.name));
       return { name: entry.name, size: stat.size, modifiedAt: stat.mtimeMs, active: entry.name.toLowerCase() === activeName };
@@ -191,11 +207,29 @@ function listSaveSlots(worldId) {
     .sort((a, b) => Number(b.active) - Number(a.active) || b.modifiedAt - a.modifiedAt);
 }
 
+function removeSaveSlot(worldId, slotName) {
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  const name = safeSaveName(slotName);
+  const slot = listSaveSlots(worldId).find((item) => item.name === name);
+  if (!slot) throw new Error("Save alias not found");
+  if (slot.active || dbm.getSetting(activeSaveKey(worldId), null)?.slotName === name) {
+    throw new Error("The active world cannot be deleted. Activate a different world first.");
+  }
+  if (require("./supervisor").pendingWorldSave(worldId)?.slotName === name) {
+    throw new Error("This world is queued for the next server start. Select a different world first.");
+  }
+  trashPath(path.join(P.worldSaveSlots(worldId), name));
+  dbm.logEvent(worldId, "import", `Removed saved world alias ${name} to the OS trash`);
+  return { name, recoverable: true };
+}
+
 function verifyActiveSaveSlot(worldId, slotName) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const activeSave = safeSaveName(slotName);
-  const sourceFile = path.join(P.worldSaveSlots(worldId), activeSave);
+  const alias = safeSaveName(slotName);
+  const activeSave = profileSaveName(world);
+  const sourceFile = path.join(P.worldSaveSlots(worldId), alias);
   if (!fs.existsSync(sourceFile)) throw new Error("Save slot not found");
   const live = liveSaveEntries(world);
   if (live.length !== 1 || live[0].name.toLowerCase() !== activeSave.toLowerCase()) {
@@ -208,7 +242,7 @@ function verifyActiveSaveSlot(worldId, slotName) {
   if (expectedSize !== actualSize || expectedSha256 !== actualSha256) {
     throw new Error(`World activation verification failed: ${activeSave} did not copy intact`);
   }
-  return { activeSave, size: actualSize, sha256: actualSha256, path: live[0].path };
+  return { activeSave, slotName: alias, size: actualSize, sha256: actualSha256, path: live[0].path };
 }
 
 // Once a server profile has an explicitly selected save, every subsequent
@@ -225,6 +259,14 @@ function assertSelectedSaveReady(worldId) {
     throw new Error(`Selected world save ${activeSave} is not the only .sav in SaveGames. Open Server Settings → World save to activate it again before starting.`);
   }
   if (!live[0].stat.size) throw new Error(`Selected world save ${activeSave} is empty; server start was blocked to prevent a Standard world.`);
+  if (dbm.getSetting(activeSaveKey(worldId), null)?.slotName) {
+    if (activeSave.toLowerCase() !== profileSaveName(world).toLowerCase()) {
+      throw new Error(`This profile was renamed. Re-activate its world save so SaveGames uses ${profileSaveName(world)} before starting.`);
+    }
+    if (world.default_world_name !== path.basename(activeSave, ".sav")) {
+      throw new Error(`DefaultWorldName must match ${activeSave}. Re-activate the selected world before starting.`);
+    }
+  }
   return { activeSave, size: live[0].stat.size, path: live[0].path };
 }
 
@@ -250,8 +292,9 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   if (require("./supervisor").isAlive(worldId)) throw new Error("Stop the server before replacing its world save");
-  const activeSave = safeSaveName(slotName);
-  const sourceFile = path.join(P.worldSaveSlots(worldId), activeSave);
+  const alias = safeSaveName(slotName);
+  const activeSave = profileSaveName(world);
+  const sourceFile = path.join(P.worldSaveSlots(worldId), alias);
   if (!fs.existsSync(sourceFile)) throw new Error("Save slot not found");
 
   const saveGames = saveGamesDir(world);
@@ -266,10 +309,21 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
   const previous = path.join(path.dirname(saveGames), `.SaveGames.previous-${nonce}`);
   const priorSelection = dbm.getSetting(activeSaveKey(worldId), null);
   const priorWorldName = world.default_world_name;
-  fs.mkdirSync(incoming, { recursive: true });
   const destination = path.join(incoming, activeSave);
 
   try {
+    fs.mkdirSync(incoming, { recursive: true });
+    // Keep game-owned non-world data, including EnhancedInputUserSettings.sav.
+    // Other world saves stay recoverable in the vault and pre-swap backup.
+    if (fs.existsSync(saveGames)) {
+      for (const entry of fs.readdirSync(saveGames, { withFileTypes: true })) {
+        if (isWorldSaveName(entry.name) || entry.isSymbolicLink()) continue;
+        const from = path.join(saveGames, entry.name);
+        const to = path.join(incoming, entry.name);
+        if (entry.isDirectory()) fs.cpSync(from, to, { recursive: true });
+        else if (entry.isFile()) fs.copyFileSync(from, to);
+      }
+    }
     fs.copyFileSync(sourceFile, destination);
     if (fs.statSync(sourceFile).size !== fs.statSync(destination).size || fileDigest(sourceFile) !== fileDigest(destination)) {
       throw new Error(`Could not verify staged world save ${activeSave}`);
@@ -285,11 +339,11 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
       throw error;
     }
     try {
-      const verified = verifyActiveSaveSlot(worldId, activeSave);
+      const verified = verifyActiveSaveSlot(worldId, alias);
       // Dragonwilds also uses DefaultWorldName when choosing a save. Keeping
       // the old name can make a correctly copied file appear to be ignored.
       dbm.updateWorld(worldId, { default_world_name: path.basename(activeSave, path.extname(activeSave)) });
-      dbm.setSetting(activeSaveKey(worldId), { schema: 1, name: activeSave, ...verified, activatedAt: Date.now() });
+      dbm.setSetting(activeSaveKey(worldId), { schema: 2, name: activeSave, slotName: alias, ...verified, activatedAt: Date.now() });
     } catch (error) {
       fs.rmSync(saveGames, { recursive: true, force: true });
       if (fs.existsSync(previous)) moveDirectory(previous, saveGames);
@@ -310,8 +364,8 @@ async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) 
   }
 
   serverProfiles.materializeActiveBestEffort(worldId);
-  dbm.logEvent(worldId, "import", `Activated world save slot ${activeSave}; Server profile identity retained`);
-  return { valid: true, activeSave, slots: listSaveSlots(worldId) };
+  dbm.logEvent(worldId, "import", `Activated world save alias ${alias} as ${activeSave}; Server profile identity retained`);
+  return { valid: true, activeSave, slotName: alias, slots: listSaveSlots(worldId) };
 }
 
 function stageSaveSlot(worldId, sourcePath) {
@@ -387,4 +441,6 @@ module.exports = {
   createProfile, adoptExistingInstall,
   validateSaveSource, validateSaveZip: validateSaveSource, stageSaveSlot, importSave,
   stageRepositorySave, listSaveSlots, activateSaveSlot, verifyActiveSaveSlot, assertSelectedSaveReady, copyDir,
+  profileSaveName,
+  removeSaveSlot,
 };

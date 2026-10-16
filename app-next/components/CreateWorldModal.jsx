@@ -4,14 +4,15 @@ import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import { useJobsPoll, JobCard } from "@/components/jobsClient";
+import AppOverlay from "@/components/AppOverlay";
 
 export default function CreateWorldModal({ onClose, onDone }) {
   return (
-    <Overlay onClose={onClose}>
-      <div className="panel" style={{ width: 640, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto", padding: "1.5rem" }}>
+    <AppOverlay label="Create Server Profile" onClose={onClose}>
+      <div className="panel" style={{ width: 640, padding: "1.5rem" }}>
         <CreateProfile onClose={onClose} onDone={onDone} />
       </div>
-    </Overlay>
+    </AppOverlay>
   );
 }
 
@@ -162,18 +163,6 @@ function PortField({ label, v, onChange }) {
     <div>
       <label className="label" style={{ fontSize: "0.62rem" }}>{label}</label>
       <input className="input" type="number" value={v} onChange={(e) => onChange(parseInt(e.target.value || "0", 10))} style={{ padding: "0.35rem 0.5rem" }} />
-    </div>
-  );
-}
-
-export function Overlay({ children, onClose }) {
-  const downOnBackdrop = useRef(false);
-  return (
-    <div
-      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (onClose && e.target === e.currentTarget && downOnBackdrop.current) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 40, padding: "1rem" }}>
-      <div>{children}</div>
     </div>
   );
 }

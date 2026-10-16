@@ -32,12 +32,32 @@ function safeIdentity(value) {
 }
 
 function runtimeIdentity(source) {
+  let buildId = "";
+  try { buildId = fs.readFileSync(path.join(source, runtimeDistDir(source), "BUILD_ID"), "utf8").trim(); } catch {}
   try {
     const info = JSON.parse(fs.readFileSync(path.join(source, "build-info.json"), "utf8"));
-    if (info.commit) return safeIdentity(`${info.version || "build"}-${info.commit}`);
+    if (info.commit && buildId) {
+      // Rebuilding an uncommitted checkout must not reuse its earlier UI cache.
+      const digest = crypto.createHash("sha256").update(`${info.version}:${info.commit}:${buildId}`).digest("hex").slice(0, 16);
+      return safeIdentity(`${info.version || "build"}-${digest}`);
+    }
   } catch {}
-  try { return safeIdentity(fs.readFileSync(path.join(source, runtimeDistDir(source), "BUILD_ID"), "utf8").trim()); }
-  catch { return safeIdentity(null); }
+  return safeIdentity(buildId || null);
+}
+
+function materializeRuntimeAsync(source, dataDirectory) {
+  const { Worker } = require("worker_threads");
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, "runtime-worker.js"), { workerData: { source, dataDirectory } });
+    let reported = false;
+    worker.once("message", (result) => {
+      reported = true;
+      if (result.error) reject(new Error(result.error));
+      else resolve(result.root);
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => { if (!reported) reject(new Error(`Interface staging worker exited before reporting its result (code ${code})`)); });
+  });
 }
 
 function verifyRuntime(root) {
@@ -76,11 +96,15 @@ function materializeRuntime(source, dataDirectory) {
   }
 
   fs.mkdirSync(runtimeRoot, { recursive: true });
+  const staged = path.join(runtimeRoot, `${identity}.staging-${crypto.randomUUID()}`);
   try {
-    materializeTree(source, target);
-    verifyRuntime(target);
+    // Publishing a complete tree in one rename also makes quitting during the
+    // background copy safe: a partial staging directory is never a warm cache.
+    materializeTree(source, staged);
+    verifyRuntime(staged);
+    fs.renameSync(staged, target);
   } catch (error) {
-    fs.rmSync(target, { recursive: true, force: true });
+    fs.rmSync(staged, { recursive: true, force: true });
     throw error;
   }
 
@@ -93,4 +117,4 @@ function materializeRuntime(source, dataDirectory) {
   return target;
 }
 
-module.exports = { materializeRuntime, verifyRuntime, runtimeIdentity, runtimeDistDir, materializeTree, REQUIRED };
+module.exports = { materializeRuntime, materializeRuntimeAsync, verifyRuntime, runtimeIdentity, runtimeDistDir, materializeTree, REQUIRED };

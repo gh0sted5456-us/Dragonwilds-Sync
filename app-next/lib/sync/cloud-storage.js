@@ -106,9 +106,9 @@ function validateCloudManifest(payload, localManifest, provider) {
   return { revision: String(payload.revision || localManifest.revision || ""), files };
 }
 
-async function refresh(worldId, localManifest, fetchImpl = fetch) {
+async function fetchPublicManifest(worldId, fetchImpl = fetch) {
   const config = getConfig(worldId);
-  if (config.mode === "local") return publicStatus(worldId);
+  if (!config.manifestUrl) throw new Error("No public cloud manifest link is configured");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
@@ -118,8 +118,15 @@ async function refresh(worldId, localManifest, fetchImpl = fetch) {
     if (declaredLength > MAX_MANIFEST_BYTES) throw new Error("Cloud manifest exceeds 4 MiB");
     const text = await response.text();
     if (Buffer.byteLength(text) > MAX_MANIFEST_BYTES) throw new Error("Cloud manifest exceeds 4 MiB");
-    let payload;
-    try { payload = JSON.parse(text); } catch { throw new Error("Cloud manifest is not valid JSON"); }
+    try { return JSON.parse(text); } catch { throw new Error("Cloud manifest is not valid JSON"); }
+  } finally { clearTimeout(timeout); }
+}
+
+async function refresh(worldId, localManifest, fetchImpl = fetch) {
+  const config = getConfig(worldId);
+  if (config.mode === "local") return publicStatus(worldId);
+  try {
+    const payload = await fetchPublicManifest(worldId, fetchImpl);
     const validated = validateCloudManifest(payload, localManifest, config.provider);
     config.cache = { ...validated, syncedAt: Date.now(), lastError: null };
     dbm.setSetting(configKey(worldId), config);
@@ -128,7 +135,7 @@ async function refresh(worldId, localManifest, fetchImpl = fetch) {
     config.cache = { ...(config.cache || {}), lastError: String(error.message || "Cloud manifest refresh failed").replace(/https?:\/\/\S+/gi, "[redacted]") };
     dbm.setSetting(configKey(worldId), config);
     throw new Error(config.cache.lastError);
-  } finally { clearTimeout(timeout); }
+  }
 }
 
 function save(worldId, input = {}) {
@@ -150,4 +157,4 @@ function resolveRemoteFile(worldId, file) {
   return { mode: config.mode, provider: config.provider, url: match.url };
 }
 
-module.exports = { SCHEMA, PROVIDERS, HOST_TYPES, normalizePublicUrl, validateCloudManifest, getConfig, publicStatus, save, refresh, resolveRemoteFile };
+module.exports = { SCHEMA, PROVIDERS, HOST_TYPES, normalizePublicUrl, validateCloudManifest, fetchPublicManifest, getConfig, publicStatus, save, refresh, resolveRemoteFile };

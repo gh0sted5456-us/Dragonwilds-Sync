@@ -19,16 +19,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang={lng} dir={dir} suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
         {/* Set theme before paint to avoid flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var t='dark';try{t=localStorage.getItem('rsdw-theme')||'dark';}catch(e){}if(['dark','amethyst','ember','frost'].indexOf(t)<0)t='dark';document.documentElement.classList.add('dark');document.documentElement.dataset.rsdwTheme=t;})();`,
+            __html: `(function(){var t='dark';try{t=localStorage.getItem('rsdw-theme')||'dark';}catch(e){}if(['dark','gilded','amethyst','ember','frost'].indexOf(t)<0)t='dark';document.documentElement.classList.add('dark');document.documentElement.dataset.rsdwTheme=t;if(window.desktop?.nativeSplash)document.documentElement.dataset.rsdwNativeSplash='true';})();`,
           }}
         />
       </head>

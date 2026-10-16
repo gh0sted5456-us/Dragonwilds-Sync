@@ -30,7 +30,7 @@ async function hashFile(file) {
   return hash.digest("hex");
 }
 
-function start(worldId, { platform = "steam", manifest = null, resolver = sync.resolveWorldFile } = {}) {
+function start(worldId, { platform = "steam", manifest = null, resolver = sync.resolveWorldFile, fetchManifest = cloud.fetchPublicManifest } = {}) {
   const id = String(worldId || "");
   if (!/^[a-zA-Z0-9_-]{1,120}$/.test(id)) throw new Error("Invalid World ID for export.");
   if (!["steam", "gamepass"].includes(platform)) throw new Error("Choose Steam or Game Pass files.");
@@ -48,7 +48,7 @@ function start(worldId, { platform = "steam", manifest = null, resolver = sync.r
   const job = {
     phase: "copying", copiedFiles: 0, totalFiles: files.length, copiedBytes: 0,
     totalBytes: files.reduce((sum, file) => sum + Number(file.size || 0), 0),
-    currentFile: "", folder: "", error: "", platform,
+    currentFile: "", folder: "", error: "", platform, reusedLinks: 0, missingLinks: 0, warning: "",
   };
   jobs.set(id, job);
   const base = path.join(P.data(), "delivery-exports", id);
@@ -75,9 +75,37 @@ function start(worldId, { platform = "steam", manifest = null, resolver = sync.r
         job.copiedBytes += copied.size;
         job.phase = "copying";
       }
+      // A public folder URL does not expose a reliable per-file link index.
+      // Reuse only URLs whose target, size and SHA-256 still match the public
+      // manifest (or our last verified cache). Changed/new files need upload
+      // and a fresh link before this manifest can be published.
+      const config = cloud.getConfig(id);
+      let previousFiles = config.cache?.files || [];
+      if (config.manifestUrl) {
+        try {
+          const remote = await fetchManifest(id);
+          if (remote.schema !== cloud.SCHEMA || !Array.isArray(remote.files)) throw new Error("The public manifest format is invalid");
+          previousFiles = remote.files;
+        } catch (error) {
+          job.warning = `Could not read the existing public manifest; using cached verified links when available: ${String(error.message || error).replace(/https?:\/\/\S+/gi, "[redacted]")}`;
+        }
+      }
+      const known = new Map();
+      for (const item of previousFiles) {
+        if (!item?.target || !item?.url) continue;
+        try {
+          known.set(`${item.target}\0${item.size}\0${String(item.sha256).toLowerCase()}`, cloud.normalizePublicUrl(item.url, config.provider));
+        } catch { /* Do not carry forward invalid or wrong-provider links. */ }
+      }
+      const entries = files.map((file) => {
+        const url = known.get(`${file.target}\0${file.size}\0${String(file.sha256).toLowerCase()}`);
+        if (url) job.reusedLinks += 1;
+        else job.missingLinks += 1;
+        return { target: file.target, size: file.size, sha256: file.sha256, url: url || "PASTE_PUBLIC_FILE_LINK" };
+      });
       const template = {
         schema: cloud.SCHEMA, revision: sourceManifest.revision,
-        files: files.map((file) => ({ target: file.target, size: file.size, sha256: file.sha256, url: "PASTE_PUBLIC_FILE_LINK" })),
+        files: entries,
       };
       await fs.promises.writeFile(path.join(folder, "rsdw-manifest.json"), JSON.stringify(template, null, 2) + "\n", { flag: "wx" });
       job.folder = folder;

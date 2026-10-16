@@ -10,6 +10,7 @@ const steamlib = require("../steamlibrary");
 const { P } = require("../paths");
 const profileSaves = require("../profile-saves");
 const clientIsolation = require("../client-isolation");
+const { renameWithRetry } = require("./fs-retry");
 
 const ledgerKey = (profileId) => `clientSyncLedger:${profileId}`;
 const activeLedgerKey = (service, install = "") => {
@@ -47,70 +48,95 @@ async function fetchJson(url, password, platform) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(url, { cache: "no-store", signal: controller.signal, headers: { "X-RSDW-World-Password": String(password || ""), "X-RSDW-Client-Platform": platform === "gamepass" ? "gamepass" : "steam" } });
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal, redirect: "error", headers: { "X-RSDW-World-Password": String(password || ""), "X-RSDW-Client-Platform": platform === "gamepass" ? "gamepass" : "steam" } });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.manifest) throw new Error(data.error || `World manifest request failed (${response.status})`);
+    if (!response.ok || !data.manifest) { const error = new Error(data.error || `World manifest request failed (${response.status})`); error.status = response.status; throw error; }
     return data.manifest;
   } finally { clearTimeout(timeout); }
 }
 
-async function downloadChange(base, connection, platform, stagingRoot, change, onBytes = () => {}) {
+async function downloadChange(base, connection, platform, stagingRoot, change, onBytes = () => {}, onSource = () => {}, options = {}) {
   const local = safeLocal(stagingRoot, change.target);
   await fs.promises.mkdir(path.dirname(local), { recursive: true });
   const temp = `${local}.rsdw-sync-${crypto.randomBytes(6).toString("hex")}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000);
-  try {
-    let downloadUrl = `${base}/file?target=${encodeURIComponent(change.target)}`;
-    if (change.downloadUrl) {
-      const candidate = new URL(change.downloadUrl);
-      const expected = new URL(base);
-      if (!["http:", "https:"].includes(candidate.protocol) || candidate.username || candidate.password || candidate.origin !== expected.origin) throw new Error("World manifest contains an unsafe download URL");
-      downloadUrl = candidate.toString();
-    }
-    const attempt = async (requestUrl) => {
-      let attemptBytes = 0;
-      try {
-        let response = await fetch(requestUrl, {
-          cache: "no-store",
-          signal: controller.signal,
-          redirect: "manual",
-          headers: { "X-RSDW-World-Password": String(connection.password || ""), "X-RSDW-Client-Platform": platform },
-        });
-        if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
-          const cloudUrl = cloudStorage.normalizePublicUrl(response.headers.get("location"), change.storageProvider || "generic");
-          response = await fetch(cloudUrl, { cache: "no-store", signal: controller.signal, redirect: "follow" });
+  let downloadUrl = `${base}/file?target=${encodeURIComponent(change.target)}`;
+  if (change.downloadUrl) {
+    const candidate = new URL(change.downloadUrl);
+    const expected = new URL(base);
+    if (!["http:", "https:"].includes(candidate.protocol) || candidate.username || candidate.password || candidate.origin !== expected.origin) throw new Error("World manifest contains an unsafe download URL");
+    downloadUrl = candidate.toString();
+  }
+  const attempt = async (requestUrl, fallback = false) => {
+    let attemptBytes = 0, reportedBytes = 0, source = fallback ? "fallback" : "host";
+    const controller = new AbortController();
+    // Each attempt owns its timeout: a timed-out cloud stream must not poison
+    // the independent hybrid fallback request.
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 120000);
+    try {
+      onSource(source);
+      let response = await fetch(requestUrl, {
+        cache: "no-store", signal: controller.signal, redirect: "manual",
+        headers: { "X-RSDW-World-Password": String(connection.password || ""), "X-RSDW-Client-Platform": platform },
+      });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        await response.body?.cancel().catch(() => {});
+        if (fallback || change.storageMode === "local" || !location) throw new Error("The host returned an unexpected file redirect.");
+        source = "cloud"; onSource(source);
+        let cloudUrl = cloudStorage.normalizePublicUrl(location, change.storageProvider || "generic");
+        for (let hop = 0; ; hop++) {
+          // No host credentials or cookies are forwarded to storage providers.
+          response = await fetch(cloudUrl, { cache: "no-store", signal: controller.signal, redirect: "manual" });
+          if (response.status < 300 || response.status >= 400) break;
+          const next = response.headers.get("location");
+          await response.body?.cancel().catch(() => {});
+          if (!next || hop >= 5) throw new Error("Cloud download has too many redirects.");
+          cloudUrl = cloudStorage.normalizePublicUrl(new URL(next, cloudUrl).toString(), "generic");
         }
-        if (!response.ok || !response.body) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Download failed (${response.status})`);
-        }
-        const contentLengthHeader = response.headers.get("content-length");
-        const contentLength = contentLengthHeader == null ? null : Number(contentLengthHeader);
-        if (contentLength !== null && Number.isFinite(contentLength) && contentLength !== change.size) throw new Error(`Size declaration changed while downloading ${change.target}`);
-        const meter = new Transform({ transform(chunk, _encoding, callback) { attemptBytes += chunk.length; onBytes(chunk.length); callback(null, chunk); } });
-        await pipeline(Readable.fromWeb(response.body), meter, fs.createWriteStream(temp, { flags: "wx" }));
-        const stat = await fs.promises.stat(temp);
-        if (stat.size !== change.size) throw new Error(`Size verification failed for ${change.target}`);
-        if (await sha256File(temp) !== change.sha256) throw new Error(`Hash verification failed for ${change.target}`);
-      } catch (error) {
-        if (attemptBytes) onBytes(-attemptBytes);
-        await fs.promises.rm(temp, { force: true }).catch(() => {});
+      }
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => {});
+        const error = new Error(source === "cloud" ? `Cloud download unavailable (${response.status}). The host may need to refresh its public links.` : `Host download failed (${response.status}).`);
+        error.status = response.status;
         throw error;
       }
-    };
-    try { await attempt(downloadUrl); }
-    catch (cloudError) {
-      if (change.storageMode !== "hybrid") throw cloudError;
+      const contentType = response.headers.get("content-type") || "";
+      if (/text\/html/i.test(contentType)) { await response.body.cancel().catch(() => {}); throw new Error("Storage returned a web page instead of a mod file. The host must provide a direct public download link."); }
+      const declared = response.headers.get("content-length");
+      if (declared != null && Number(declared) !== Number(change.size)) { await response.body.cancel().catch(() => {}); throw new Error(`Size declaration changed while downloading ${change.target}`); }
+      const meter = new Transform({ transform(chunk, _encoding, callback) {
+        attemptBytes += chunk.length;
+        if (attemptBytes > Number(change.size)) { callback(new Error(`Download exceeds the declared size for ${change.target}`)); return; }
+        reportedBytes += chunk.length; onBytes(chunk.length); callback(null, chunk);
+      } });
+      await pipeline(Readable.fromWeb(response.body), meter, fs.createWriteStream(temp, { flags: "wx" }));
+      onSource(source, "verifying");
+      const stat = await fs.promises.stat(temp);
+      if (stat.size !== Number(change.size)) throw new Error(`Size verification failed for ${change.target}`);
+      if (await sha256File(temp) !== change.sha256) throw new Error(`Hash verification failed for ${change.target}`);
+      return source;
+    } catch (error) {
+      if (reportedBytes) onBytes(-reportedBytes);
+      await fs.promises.rm(temp, { force: true }).catch(() => {});
+      error.deliverySource = source;
+      throw error;
+    } finally { clearTimeout(timeout); }
+  };
+  try {
+    let source;
+    try { source = await attempt(downloadUrl); }
+    catch (error) {
+      if (change.storageMode !== "hybrid" || (error.deliverySource !== "cloud" && [401, 403].includes(error.status))) throw error;
       const fallback = new URL(downloadUrl);
       fallback.searchParams.set("source", "local");
-      await attempt(fallback.toString());
+      onSource("fallback", "retrying");
+      source = await attempt(fallback.toString(), true);
     }
-    return { ...change, local, temp };
+    return { ...change, local, temp, source };
   } catch (error) {
     await fs.promises.rm(temp, { force: true }).catch(() => {});
     throw error;
-  } finally { clearTimeout(timeout); }
+  }
 }
 
 async function mapLimit(items, limit, task) {
@@ -149,15 +175,17 @@ async function saveProfileSnapshot(profileId, manifest, install, staged = []) {
       const destination = safeLocal(candidate, file.target);
       await fs.promises.mkdir(path.dirname(destination), { recursive: true });
       await fs.promises.copyFile(source, destination);
+      const stat = await fs.promises.stat(destination);
+      if (stat.size !== Number(file.size) || await sha256File(destination) !== file.sha256) throw new Error(`Profile snapshot verification failed for ${file.target}`);
     }
     await fs.promises.writeFile(path.join(candidate, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
-    if (fs.existsSync(permanent)) await fs.promises.rename(permanent, previous);
-    await fs.promises.rename(candidate, permanent);
-    await fs.promises.rm(previous, { recursive: true, force: true });
+    if (fs.existsSync(permanent)) await renameWithRetry(permanent, previous);
+    await renameWithRetry(candidate, permanent);
+    await fs.promises.rm(previous, { recursive: true, force: true }).catch(() => {});
     return permanent;
   } catch (error) {
     await fs.promises.rm(candidate, { recursive: true, force: true }).catch(() => {});
-    if (!fs.existsSync(permanent) && fs.existsSync(previous)) await fs.promises.rename(previous, permanent).catch(() => {});
+    if (!fs.existsSync(permanent) && fs.existsSync(previous)) await renameWithRetry(previous, permanent).catch(() => {});
     throw error;
   }
 }
@@ -267,13 +295,13 @@ async function activateProfileSnapshot(profileId, options = {}) {
         operation.backup = backupPath(recoveryRoot, operation.target);
         await fs.promises.mkdir(path.dirname(operation.backup), { recursive: true });
         await fs.promises.copyFile(operation.destination, operation.backup);
+        applied.push(operation); // Restore this file even if the projection fails.
         await fs.promises.rm(operation.destination, { force: true });
-      }
+      } else applied.push(operation);
       if (operation.action === "project") {
         operation.deployment = await projectProfileFile(operation.source, operation.destination);
         deployment[operation.deployment]++;
       } else deployment.removed++;
-      applied.push(operation);
       onProgress({ phase: "install", percent: Math.round(80 + ((index + 1) / Math.max(1, operations.length)) * 18), message: "Activating World mod profile…", line: `${operation.action === "project" ? `Projected (${operation.deployment})` : "Removed retired file"} ${operation.target}` });
     }
   } catch (error) {
@@ -309,7 +337,7 @@ async function activateProfileSnapshot(profileId, options = {}) {
   return { profileId, service, install, snapshot, revision: manifest.revision, deployment, saves, changed: operations.length };
 }
 
-async function performSync(profileId, onProgress = () => {}) {
+async function performSync(profileId, onProgress = () => {}, options = {}) {
   const profile = dbm.getProfile(profileId);
   if (!profile) throw new Error("World profile not found");
   const connection = JSON.parse(profile.connection_json || "{}");
@@ -323,17 +351,18 @@ async function performSync(profileId, onProgress = () => {}) {
   if (!install) throw new Error(`This World needs a ${steamlib.serviceLabel(service)} game installation. Choose it on the World page or under Application Setup.`);
   clientIsolation.assertManagedReady(install, service);
   const base = `http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`;
-  onProgress({ phase: "prepare", percent: 1, message: "Downloading World manifest…", line: `Connecting to ${address}:${port}…` });
+  onProgress({ phase: "auth", percent: 1, message: "Authenticating with the World…", line: "Requesting the authenticated World manifest." });
   let manifest;
   try { manifest = await fetchJson(base, connection.password, platform); }
   catch (error) {
+    if (options.requireOnline || [401, 403].includes(error.status)) throw error;
     manifest = readProfileSnapshotManifest(profileId);
     if (!manifest) throw error;
     onProgress({ phase: "prepare", percent: 2, message: "Using saved World profile…", line: `Host unavailable; using authenticated cached manifest ${manifest.revision}.` });
   }
-  const stagingRoot = await fs.promises.mkdtemp(path.join(P.staging(), `client-${safeProfileSegment(profileId)}-`));
   const comparison = manifestLib.compareManifest(manifest, install);
-  onProgress({ phase: "prepare", percent: 4, message: "Preparing managed downloads…", line: `Manifest ${manifest.revision}: ${comparison.changes.length} file(s) to synchronize.` });
+  const stagingRoot = await fs.promises.mkdtemp(path.join(P.staging(), `client-${safeProfileSegment(profileId)}-`));
+  onProgress({ phase: "compare", percent: 4, message: "Comparing this profile's files…", line: `Manifest ${manifest.revision}: ${comparison.changes.length} file(s) to synchronize.` });
   const declared = new Set((manifest.units || []).flatMap((unit) => unit.files || []).map((file) => String(file.target)));
   const declaredKeys = new Set([...declared].map(targetKey));
   const oldLedger = dbm.getSetting(ledgerKey(profileId), { files: [] });
@@ -352,22 +381,49 @@ async function performSync(profileId, onProgress = () => {}) {
   let staged = [];
   const downloadBytes = comparison.changes.reduce((sum, change) => sum + Number(change.size || 0), 0);
   let receivedBytes = 0;
+  let filesDone = 0, lastEmit = 0, fallbackCount = 0;
+  const activeFiles = new Map();
+  const sources = { host: 0, cloud: 0, cache: 0, fallback: 0 };
+  const transfer = () => ({
+    mode: manifest.transport?.storageMode || "local", provider: manifest.transport?.storageProvider || "local",
+    bytesDone: Math.max(0, Math.min(downloadBytes, receivedBytes)), bytesTotal: downloadBytes,
+    filesDone, filesTotal: comparison.changes.length, fallbackCount, sources: { ...sources },
+    activeFiles: [...activeFiles.values()].map((file) => ({ ...file })),
+  });
+  const report = (message, line, force = false) => {
+    const now = Date.now();
+    if (!force && !line && now - lastEmit < 150) return;
+    lastEmit = now;
+    onProgress({ phase: "download", percent: downloadBytes ? Math.round(5 + Math.max(0, Math.min(1, receivedBytes / downloadBytes)) * 70) : 75, message, line, transfer: transfer() });
+  };
+  onProgress({ phase: "compare", percent: 5, message: comparison.changes.length ? "Transfer plan ready." : "Files already match. No download needed.", transfer: transfer() });
   try {
     await mapLimit(comparison.changes, 3, async (change) => {
+      const name = path.posix.basename(change.target.replace(/\\/g, "/"));
+      activeFiles.set(change.target, { id: change.target, name, bytes: 0, total: Number(change.size), source: "cache", state: "checking" });
       const cached = await stageCachedChange(profileId, stagingRoot, change, manifest.revision);
       if (cached) {
         receivedBytes += Number(change.size || 0);
+        filesDone++; sources.cache++; activeFiles.delete(change.target);
         staged.push(cached);
-        onProgress({ phase: "download", percent: downloadBytes ? Math.round(5 + receivedBytes / downloadBytes * 72) : 77, message: `Restoring ${change.unitName || "managed mod"}…`, line: `Restored ${change.target} from this World profile cache.` });
+        report("Reusing verified profile files…", `Restored ${change.target} from this World profile cache.`, true);
         return cached;
       }
-      onProgress({ phase: "download", percent: downloadBytes ? Math.round(5 + receivedBytes / downloadBytes * 72) : 77, message: `Downloading ${change.unitName || "managed mod"}…`, line: `Downloading ${change.target} (${change.size} bytes)…` });
+      report("Transferring required files…", `Downloading ${change.target} (${change.size} bytes)…`, true);
       const item = await downloadChange(base, connection, platform, stagingRoot, change, (bytes) => {
         receivedBytes += bytes;
-        onProgress({ phase: "download", percent: downloadBytes ? Math.round(5 + receivedBytes / downloadBytes * 72) : 77, message: `Downloading ${change.unitName || "managed mod"}…` });
+        const file = activeFiles.get(change.target);
+        if (file) file.bytes = Math.max(0, Math.min(file.total, file.bytes + bytes));
+        report("Transferring and checking required files…");
+      }, (source, state = "downloading") => {
+        const file = activeFiles.get(change.target);
+        if (file) { file.source = source; file.state = state; }
+        if (state === "retrying") { fallbackCount++; report("Cloud source failed. Retrying from the host…", `Hybrid fallback: retrying ${name} from the World host.`, true); }
+        else report(state === "verifying" ? `Checking ${name}…` : "Transferring required files…", null, true);
       });
       staged.push(item);
-      onProgress({ phase: "verify", percent: downloadBytes ? Math.round(5 + receivedBytes / downloadBytes * 72) : 77, message: `Verified ${change.unitName || "managed mod"}`, line: `Verified ${change.target}` });
+      filesDone++; sources[item.source]++; activeFiles.delete(change.target);
+      report("Files transferred and checked…", `Verified ${change.target}`, true);
       return item;
     });
   } catch (error) {
@@ -376,7 +432,7 @@ async function performSync(profileId, onProgress = () => {}) {
     throw error;
   }
 
-  onProgress({ phase: "verify", percent: 78, message: "Saving World profile snapshot…", line: "Saving the complete verified mod set into this World profile." });
+  onProgress({ phase: "verify", percent: 78, message: "Verifying the complete profile snapshot…", line: "Saving and rechecking the complete mod set in this World profile.", transfer: transfer() });
   let snapshot;
   try { snapshot = await saveProfileSnapshot(profileId, manifest, install, staged); }
   catch (error) {
@@ -406,6 +462,9 @@ async function performSync(profileId, onProgress = () => {}) {
     display_name: manifest.world?.name || profile.display_name,
     connection: {
       ...connection,
+      deliveryMode: manifest.transport?.storageMode || "local",
+      deliveryProvider: manifest.transport?.storageProvider || "local",
+      admission: null,
       worldIdentity: {
         iconData: identity.iconData || null,
         bannerData: identity.bannerData || null,
@@ -428,14 +487,14 @@ async function performSync(profileId, onProgress = () => {}) {
     last_manifest_revision: manifest.revision,
   });
   pruneRecovery(profileId);
-  onProgress({ phase: "finalizing", percent: 100, message: "World synchronized", line: `Synchronization complete: ${staged.length} downloaded, ${activation.deployment.hardlink + activation.deployment.symlink} linked, ${activation.deployment.copy} copied as fallback; ${declared.size} profile files cached.` });
-  return { manifest, installed: staged.map((item) => item.target), removed: removals.map((item) => item.target), current: staged.length === 0 && activation.changed === 0, receipt: path.join(recoveryRoot, "receipt.json"), snapshot, deployment: activation.deployment };
+  onProgress({ phase: "prepared", percent: 92, message: "Profile files prepared. Awaiting host approval…", line: `Profile files verified: ${staged.length} updated, ${activation.deployment.hardlink + activation.deployment.symlink} linked; ${declared.size} files cached.`, transfer: transfer() });
+  return { manifest, transfer: transfer(), installed: staged.map((item) => item.target), removed: removals.map((item) => item.target), current: staged.length === 0 && activation.changed === 0, receipt: path.join(recoveryRoot, "receipt.json"), snapshot, deployment: activation.deployment };
 }
 
-function synchronizeProfile(profileId, onProgress = () => {}) {
+function synchronizeProfile(profileId, onProgress = () => {}, options = {}) {
   const key = String(profileId || "");
   if (inFlight.has(key)) return inFlight.get(key);
-  const run = syncQueue.catch(() => {}).then(() => performSync(key, onProgress));
+  const run = syncQueue.catch(() => {}).then(() => performSync(key, onProgress, options));
   syncQueue = run.catch(() => {});
   inFlight.set(key, run);
   run.then(
@@ -445,4 +504,4 @@ function synchronizeProfile(profileId, onProgress = () => {}) {
   return run;
 }
 
-module.exports = { synchronizeProfile, activateProfileSnapshot, safeLocal };
+module.exports = { synchronizeProfile, activateProfileSnapshot, safeLocal, downloadChange };

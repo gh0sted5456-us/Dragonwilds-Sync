@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage, utilityProcess, session } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage, utilityProcess, session, safeStorage } = require("electron");
 
 // Run without Chromium's sandbox on Linux (issue #32). The AppImage mounts read-only,
 // so its bundled chrome-sandbox can't be setuid-root, and server distros often restrict
@@ -17,7 +17,10 @@ const http = require("http");
 const net = require("net");
 const crypto = require("crypto");
 const { preparePortableUpdate } = require("./portable-update");
-const { materializeRuntime, runtimeDistDir } = require("./stable-runtime");
+const { materializeRuntimeAsync, runtimeDistDir } = require("./stable-runtime");
+const { createStartupGate, startupHtml } = require("./startup-screen");
+const { CloudPublisher } = require("./cloud-publisher");
+const { windowPalette } = require("./window-theme");
 
 const isDev = process.env.NODE_ENV === "development";
 let PORT = 4317;
@@ -43,6 +46,15 @@ let startupFailure = "";
 let modProviderWindow = null;
 let modProviderDownload = null;
 let stableRuntimePath = null;
+let stableRuntimePromise = null;
+let appNavigation = null;
+const startupStartedAt = Date.now();
+const startupGate = createStartupGate({
+  onEnter: () => loadAppIntoWindow(pendingRoute),
+  onStatus: (state) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("startup-status", state);
+  },
+});
 
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
 // close handler knows to actually close instead of hiding to the tray.
@@ -79,6 +91,65 @@ if (!gotLock) {
 
 function dataDir() {
   return app.getPath("userData");
+}
+
+let cloudPublisher = null;
+let cloudAutoRunning = false;
+function publisher() {
+  if (!cloudPublisher) cloudPublisher = new CloudPublisher({
+    dataDir: dataDir(), safeStorage, openExternal: (url) => shell.openExternal(url),
+    onProgress: (progress) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("cloud-publish-progress", progress); },
+  });
+  return cloudPublisher;
+}
+
+async function localCloudApi(route, body) {
+  const response = await fetch(`http://127.0.0.1:${PORT}${route}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "content-type": "application/json", cookie: `dwsm_admin=${ADMIN_TOKEN}` },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(45000),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || `Local cloud request failed (${response.status})`);
+  return result;
+}
+
+async function runAutoCloudPublish() {
+  if (!serverReady || cloudAutoRunning || quitting || publisher().busy) return;
+  cloudAutoRunning = true;
+  try {
+    for (const task of publisher().autoTasks()) {
+      if (quitting) break;
+      const base = `/api/worlds/${encodeURIComponent(task.worldId)}`;
+      try {
+        const current = (await localCloudApi(`${base}/storage`)).storage;
+        if (!["cloud", "hybrid"].includes(current.mode) || current.provider !== task.provider) continue;
+        const revision = (await localCloudApi(`${base}/sync/manifest`)).manifest.revision;
+        if (revision === task.lastVerifiedRevision) continue;
+        const prepared = await localCloudApi(`${base}/storage`, { prepareExport: true, platform: task.platform });
+        let job = prepared.export;
+        const deadline = Date.now() + 10 * 60_000;
+        while (["copying", "verifying"].includes(job.phase) && Date.now() < deadline && !quitting) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          job = (await localCloudApi(`${base}/storage?export=status`)).export;
+        }
+        if (job.phase !== "ready") throw new Error(job.error || "Cloud export did not finish");
+        const published = await publisher().publish(task.provider, task.worldId, job.folder, true);
+        await localCloudApi(`${base}/storage`, {
+          mode: current.mode, hostType: current.hostType, provider: task.provider,
+          manifestUrl: published.manifestUrl, refresh: true,
+        });
+        publisher().autoResult(task.provider, task.worldId, revision);
+        logToFile(`Auto cloud publish verified for world ${task.worldId}`);
+      } catch (error) {
+        publisher().autoResult(task.provider, task.worldId, null, error);
+        logToFile(`Auto cloud publish failed for world ${task.worldId}: ${String(error.message || error).replace(/https?:\/\/\S+/gi, "[redacted]")}`);
+      }
+    }
+  } catch (error) {
+    logToFile(`Auto cloud maintenance unavailable: ${error.message}`);
+  } finally { cloudAutoRunning = false; }
 }
 
 function providerNameForUrl(value) {
@@ -162,10 +233,17 @@ function resourcePath() {
   // Windows cleanup tools may remove that folder while the app is still open,
   // so the lazily-loaded Next runtime is copied to versioned AppData once.
   if (stableRuntimePath) return stableRuntimePath;
-  const bundled = path.join(process.resourcesPath, "app");
-  stableRuntimePath = materializeRuntime(bundled, dataDir());
-  logToFile(`Stable interface runtime ready: ${stableRuntimePath}`);
-  return stableRuntimePath;
+  throw new Error("The interface runtime has not finished staging");
+}
+
+function prepareRuntime() {
+  if (isDev) return Promise.resolve();
+  stableRuntimePromise ||= materializeRuntimeAsync(path.join(process.resourcesPath, "app"), dataDir()).then((root) => {
+    stableRuntimePath = root;
+    logToFile(`Stable interface runtime ready after ${Date.now() - startupStartedAt} ms: ${root}`);
+    return root;
+  });
+  return stableRuntimePromise;
 }
 
 function bundledRuntime() {
@@ -342,23 +420,24 @@ async function chooseSharePort() {
 function showWindow(worldId, route) {
   if (worldId) pendingRoute = `/worlds/${encodeURIComponent(worldId)}`;
   else if (route) pendingRoute = route;
-  if (!mainWindow) createWindow();
+  const creating = !mainWindow;
+  if (creating) createWindow();
   const win = mainWindow;
   if (!win) return;
-  if (serverReady) loadAppIntoWindow(pendingRoute);
+  if (creating) {
+    win.once("ready-to-show", () => { if (!win.isDestroyed()) { win.show(); win.focus(); } });
+    return;
+  }
+  if (serverReady && startupGate.snapshot().entered && pendingRoute) void loadAppIntoWindow(pendingRoute);
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
 }
 
 function loadingPage(message = "Starting RSDW Sync…") {
-  const safeMessage = escapeHtml(message);
-  const html = `<!doctype html><html><body style="margin:0;background:#202427;color:#eee;font-family:Segoe UI,system-ui,sans-serif;display:grid;place-items:center;height:100vh">
-    <div style="text-align:center">
-      <div style="font-size:28px;font-weight:700;margin-bottom:10px">RSDW Sync</div>
-      <div style="color:#c1a56d;font-size:14px">${safeMessage}</div>
-    </div>
-  </body></html>`;
+  // The first screen never waits for Next, remote fonts or runtime staging.
+  const publicDirectory = isDev ? path.join(__dirname, "..", "public") : path.join(process.resourcesPath, "app", "public");
+  const html = startupHtml(publicDirectory, { ...startupGate.snapshot(), message });
   return "data:text/html;charset=utf-8," + encodeURIComponent(html);
 }
 
@@ -367,16 +446,31 @@ function escapeHtml(value) {
 }
 
 async function loadAppIntoWindow(route = null) {
-  if (!mainWindow || !serverReady) return;
+  if (!mainWindow || !serverReady || !startupGate.snapshot().entered) return false;
   await windowAuthReady;
-  if (!mainWindow || !serverReady) return;
+  if (!mainWindow || !serverReady) return false;
   const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
   const target = route || pendingRoute || "";
   pendingRoute = null;
-  mainWindow.loadURL(`${base}${target}`).catch((error) => {
+  const url = `${base}${target}`;
+  if (mainWindow.webContents.getURL() === url) return true;
+  if (appNavigation?.url === url) return appNavigation.promise;
+  const win = mainWindow;
+  const promise = win.loadURL(url).then(() => {
+    logToFile(`Workspace loaded after ${Date.now() - startupStartedAt} ms`);
+    return true;
+  }).catch((error) => {
+    // A newer profile shortcut may replace an in-flight navigation. Its aborted
+    // predecessor must not overwrite the new page with a startup error screen.
+    if (win !== mainWindow || appNavigation?.promise !== promise) return true;
     logToFile(`UI navigation failed after readiness check: ${error.message}`);
-    if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
+    if (!win.isDestroyed()) void win.loadURL(loadingPage("Interface startup failed — see launcher.log"));
+    return false;
+  }).finally(() => {
+    if (appNavigation?.promise === promise) appNavigation = null;
   });
+  appNavigation = { url, promise };
+  return promise;
 }
 
 async function refreshTrayMenu() {
@@ -517,12 +611,6 @@ async function stopShareServer() {
   });
 }
 
-function bundledRuntimeProblem() {
-  if (isDev) return null;
-  try { bundledRuntime(); return null; }
-  catch (error) { return error.message; }
-}
-
 // Restart only the local UI server so a changed bind host (loopback ↔ 0.0.0.0)
  // takes effect. This never boots schedulers, game servers, runtime managers, or
  // any other background engine.
@@ -542,6 +630,7 @@ async function restartNextServer() {
   const base = `http://127.0.0.1:${PORT}`;
   const up = await waitForServer(base, 30000);
   serverReady = up;
+  if (up) localCloudApi("/api/sync/broadcast", { restore: true }).catch((error) => logToFile(`LAN discovery restore failed: ${error.message}`));
   return up;
 }
 
@@ -601,6 +690,9 @@ function requestManagedServerShutdown() {
 function createWindow() {
   if (mainWindow) { mainWindow.focus(); return; } // never create a second window
 
+  startupGate.reset(serverReady);
+  appNavigation = null;
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -616,7 +708,7 @@ function createWindow() {
       // Keep the native Windows caption buttons, but let the renderer paint the
       // surrounding title bar so the window chrome belongs to the RSDW palette.
       titleBarStyle: "hidden",
-      titleBarOverlay: { color: "#181b1e", symbolColor: "#f3efe7", height: 46 },
+      titleBarOverlay: windowPalette("dark"),
     } : {}),
     icon: isDev
       ? path.join(__dirname, "..", "public", "icon.png")
@@ -626,9 +718,9 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Don't throttle timers/rendering when this window is minimized or occluded —
-      // the managed game server free-rides on our timer resolution (issue #29).
-      backgroundThrottling: false,
+      // Game servers and their scheduling live outside the renderer. Let hidden
+      // windows yield resources; the splash button never depends on a timer.
+      backgroundThrottling: true,
     },
   });
 
@@ -648,7 +740,7 @@ function createWindow() {
   // Don't auto-show when we launched straight to the tray — the window is built so a
   // tray click has something to reveal, but it stays hidden until asked for.
   mainWindow.once("ready-to-show", () => {
-    logToFile(`Window ready (hidden=${launchedHidden})`);
+    logToFile(`Startup screen painted after ${Date.now() - startupStartedAt} ms (hidden=${launchedHidden})`);
     if (!launchedHidden) { mainWindow.show(); mainWindow.focus(); }
   });
 
@@ -703,9 +795,10 @@ function beginUiBootstrap() {
       SHARE_PORT = sharePort;
       logToFile(`Selected local UI port ${PORT}; share port ${SHARE_PORT}`);
 
-      const runtimeProblem = bundledRuntimeProblem();
-      if (runtimeProblem) throw new Error(runtimeProblem);
+      startupGate.progress("Preparing the local interface…");
+      await prepareRuntime();
 
+      startupGate.progress("Starting the local interface…");
       startNextServer();
       const base = `http://127.0.0.1:${PORT}`;
       const ready = await waitForServer(base, 30000);
@@ -714,9 +807,12 @@ function beginUiBootstrap() {
         throw new Error(`The bundled interface server did not become ready${suffix}.`);
       }
       serverReady = true;
+      logToFile(`Interface ready after ${Date.now() - startupStartedAt} ms`);
+      startupGate.ready();
       return true;
     } catch (error) {
       startupFailure = error.message;
+      startupGate.fail(error.message);
       logToFile(`UI bootstrap failed: ${error.message}`);
       return false;
     }
@@ -746,8 +842,10 @@ function main() {
       ? await (async () => {
           try {
             PORT = devServerPort();
+            if (!launchedHidden) createWindow();
             const ready = await waitForServer(process.env.ELECTRON_START_URL, 30000);
             serverReady = ready;
+            if (ready) startupGate.ready();
             return ready;
           } catch { return false; }
         })()
@@ -766,36 +864,37 @@ function main() {
           }
         })();
 
-    if (isDev && !launchedHidden) createWindow();
-
     if (!started) {
       const message = startupFailure || "The bundled interface server could not be started.";
+      startupGate.fail(message);
       if (mainWindow) mainWindow.loadURL(loadingPage(`${message} See launcher.log for details.`));
       else showErrorWindow(message);
       return;
     }
 
-    // The loading window is already visible; navigate exactly once after the
-    // authenticated local server has answered its readiness endpoint.
-    loadAppIntoWindow(pendingRoute);
+    // Readiness enables Enter. Manual launches never navigate automatically.
+    setTimeout(() => runAutoCloudPublish().catch(() => {}), 3 * 60_000);
+    setInterval(() => runAutoCloudPublish().catch(() => {}), 60 * 60_000).unref?.();
 
     // Non-critical desktop integration happens after the UI is usable.
     setImmediate(() => {
       try { initAutostart(); } catch (e) { logToFile(`Autostart init failed: ${e.message}`); }
       const hasTray = createTray();
       if (launchedHidden && !hasTray && !mainWindow) {
+        launchedHidden = false;
         createWindow();
-        loadAppIntoWindow(pendingRoute);
       }
       startShareServer();
+      // Restore LAN visibility only when the manager previously opted in.
+      // This never starts a dedicated server or materializes profile files.
+      localCloudApi("/api/sync/broadcast", { restore: true }).catch((error) => logToFile(`LAN discovery restore failed: ${error.message}`));
     });
 
     // On macOS, re-create the window when the dock icon is clicked — but ONLY
     // if there truly is no window AND the server is up. This is the guarded
     // version that prevents the infinite-window cascade.
     app.on("activate", () => {
-      if (!mainWindow) createWindow();
-      if (serverReady) loadAppIntoWindow();
+      showWindow();
     });
   });
 
@@ -825,6 +924,14 @@ function main() {
 }
 
 // ---- Native IPC: folder picker + file picker for the renderer ----
+ipcMain.handle("startup-state", (event) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error("Startup controls are limited to the main window");
+  return startupGate.snapshot();
+});
+ipcMain.handle("startup-enter", (event) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error("Startup controls are limited to the main window");
+  return startupGate.enter();
+});
 ipcMain.handle("pick-directory", async () => {
   const res = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
   return res.canceled ? null : res.filePaths[0];
@@ -858,6 +965,26 @@ ipcMain.handle("pick-world-save", async () => {
   return res.canceled ? null : res.filePaths[0];
 });
 ipcMain.handle("get-theme", () => (nativeTheme.shouldUseDarkColors ? "dark" : "light"));
+ipcMain.handle("window-theme", (_event, theme) => {
+  if (process.platform !== "win32" || !mainWindow || mainWindow.isDestroyed()) return false;
+  try { mainWindow.setTitleBarOverlay(windowPalette(theme)); return true; }
+  catch { return false; }
+});
+ipcMain.handle("cloud-account-status", () => publisher().status());
+ipcMain.handle("cloud-account-connect", (_event, request) => publisher().connect(request?.provider, request?.clientId));
+ipcMain.handle("cloud-account-disconnect", (_event, provider) => publisher().disconnect(provider));
+ipcMain.handle("cloud-publish", (_event, request) => publisher().publish(request?.provider, request?.worldId, request?.folder, request?.publicReadConsent));
+ipcMain.handle("cloud-auto-publish", async (_event, request) => {
+  let verifiedRevision = null;
+  if (request?.enabled) {
+    const result = await localCloudApi(`/api/worlds/${encodeURIComponent(request.worldId)}/storage`);
+    if (!["cloud", "hybrid"].includes(result.storage.mode) || result.storage.provider !== request.provider || !result.storage.syncedAt) {
+      throw new Error("Publish and verify this cloud manifest before enabling automatic updates");
+    }
+    verifiedRevision = result.storage.revision;
+  }
+  return publisher().setAutoPublish(request?.provider, request?.worldId, request?.enabled, request?.platform, request?.publicReadConsent, verifiedRevision);
+});
 ipcMain.handle("open-path", (_e, p) => shell.openPath(p));
 ipcMain.handle("open-external", (_e, value) => {
   const target = String(value || "");

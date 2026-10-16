@@ -75,7 +75,7 @@ export default function ProfileSavesPanel({ profileId }) {
   return <div className="panel-inset" style={{ marginTop: 12, padding: 12 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <div><strong>World and player saves</strong><div className="subtle" style={{ marginTop: 4, fontSize: ".73rem" }}>Pair this World&apos;s mod list with a world save and character bundle. Game Pass saves can be extracted here; verified Steam → Game Pass imports use the separate RSDW Save Converter. Close Dragonwilds before switching or converting.</div></div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button className="btn btn-ghost" disabled={busy} onClick={launchConverter}><Icon name="refresh" size={14} /> Steam ↔ Game Pass converter</button><button className="btn btn-ghost" disabled={busy} onClick={scanFolder}><Icon name="folder" size={14} /> Scan another folder</button><button className="btn btn-subtle" disabled={busy} onClick={load}><Icon name="refresh" size={14} /> Rescan</button></div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button className="btn btn-ghost" disabled={busy} onClick={launchConverter}><Icon name="refresh" size={14} /> Steam → Game Pass converter</button><button className="btn btn-ghost" disabled={busy} onClick={scanFolder}><Icon name="folder" size={14} /> Scan another folder</button><button className="btn btn-subtle" disabled={busy} onClick={load}><Icon name="refresh" size={14} /> Rescan</button></div>
     </div>
 
     {!!data.managed?.length && <div style={{ display: "grid", gap: 6, marginTop: 12 }}>

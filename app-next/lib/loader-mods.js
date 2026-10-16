@@ -129,4 +129,18 @@ function setEnabled(modsDir, kind, name, modPath, enabled) {
   return result;
 }
 
-module.exports = { state, setEnabled, readControlList, updateText };
+function removeEntry(modsDir, kind, name) {
+  const safeName = entryName(name);
+  const file = listFile(modsDir, kind);
+  const before = readList(file);
+  const newline = before.includes("\r\n") ? "\r\n" : "\n";
+  const after = before.split(/\r?\n/).filter((line) => parseEntry(line)?.name.toLowerCase() !== safeName.toLowerCase()).join(newline);
+  if (after !== before) atomicWrite(file, after);
+  return { file, before, after, changed: after !== before };
+}
+
+function restoreRemovedEntry(result) {
+  if (result?.changed && readList(result.file) === result.after) atomicWrite(result.file, result.before);
+}
+
+module.exports = { state, setEnabled, removeEntry, restoreRemovedEntry, readControlList, updateText };

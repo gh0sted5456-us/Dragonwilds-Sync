@@ -106,7 +106,7 @@ export default function ProfilePage() {
   if (!draft) return <div className="subtle" style={{ fontWeight: 700 }}>Loading player profile…</div>;
 
   return <div>
-    <PageHeader backHref="/?mode=player" backLabel="Back to World Management" eyebrow="PLAYER IDENTITY" title="Player Profiles" description="Switch identities to change the Worlds, saves, mod sets, and linked services shown in the launcher." icon="users" actions={<button className="btn btn-primary" onClick={create}><Icon name="plus" /> New Profile</button>} />
+    <PageHeader backHref="/" backLabel="Back to World Management" eyebrow="PLAYER IDENTITY" title="Player Profiles" description="Switch identities to change the Worlds, saves, mod sets, and linked services shown in the launcher." icon="users" actions={<button className="btn btn-primary" onClick={create}><Icon name="plus" /> New Profile</button>} />
 
     <div className="profile-management-layout">
       <aside className="panel" style={{ padding: 8 }}>

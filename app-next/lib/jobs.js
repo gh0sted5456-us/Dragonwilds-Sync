@@ -77,8 +77,21 @@ function setPhase(id, phase, message) {
 function setProgress(id, percent, message) {
   const j = JOBS.get(id);
   if (!j) return;
-  if (percent != null) j.percent = Math.max(0, Math.min(100, percent));
+  j.percent = percent == null ? null : Math.max(0, Math.min(100, percent));
   if (message != null) j.message = message;
+}
+
+function setSyncProgress(id, event = {}) {
+  const j = JOBS.get(id);
+  if (!j || j.type !== "sync") return;
+  const { stageForPhase, safeSyncText } = require("./sync-progress");
+  setPhase(id, event.phase, safeSyncText(event.message));
+  setProgress(id, event.percent, safeSyncText(event.message));
+  j.sync = { ...j.sync, stage: stageForPhase(event.phase) || j.sync?.stage || "auth" };
+  if (event.transfer) j.sync.transfer = event.transfer;
+  if (event.share != null) j.sync.share = event.share === true;
+  if (event.approved != null) j.sync.approved = event.approved === true;
+  if (event.line) logJob(id, safeSyncText(event.line));
 }
 
 // Append a raw log line and opportunistically update phase/percent from SteamCMD output.
@@ -102,9 +115,13 @@ function finishJob(id, ok, { error = null, worldId } = {}) {
   if (!j) return;
   j.status = ok ? "success" : "error";
   j.error = ok ? null : error;
+  if (j.type === "sync" && j.sync) {
+    if (!ok) j.sync.failedStage = j.sync.stage;
+    j.message = ok ? (j.sync.approved ? "Verified and approved by host" : "Profile files verified") : error || "Failed";
+  }
   j.percent = ok ? 100 : j.percent;
   j.phase = "finalizing";
-  j.message = ok ? "Complete" : error || "Failed";
+  if (j.type !== "sync") j.message = ok ? "Complete" : error || "Failed";
   j.endedAt = Date.now();
   if (worldId !== undefined) j.worldId = worldId;
 }
@@ -162,7 +179,7 @@ const PHASE_LABELS = {
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
   redist: "Installing prerequisites", runtime: "Installing mod loader",
-  copy: "Forking private server files",
+  copy: "Refreshing Server profile files",
   catalog: "Refreshing game registry", scan: "Inspecting saves", cleanup: "Cleaning saves",
 };
 function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
@@ -179,5 +196,5 @@ function prune() {
 
 module.exports = {
   createJob, getJob, listJobs, setPhase, setProgress, logJob, finishJob, parseSteamProgress,
-  phaseLabel, PHASE_LABELS, reportExternalJob,
+  phaseLabel, PHASE_LABELS, reportExternalJob, setSyncProgress,
 };

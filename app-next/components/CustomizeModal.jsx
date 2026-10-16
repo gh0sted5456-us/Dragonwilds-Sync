@@ -1,7 +1,8 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
+import AppOverlay from "@/components/AppOverlay";
 
 // Resize/compress an image file to a data URL under a target size.
 function fileToDataURL(file, maxDim, { format = "image/jpeg", quality = 0.82 } = {}) {
@@ -31,7 +32,6 @@ function fileToDataURL(file, maxDim, { format = "image/jpeg", quality = 0.82 } =
 
 export default function CustomizeModal({ world, onClose, onDone }) {
   const { t } = useTranslation();
-  const downOnBackdrop = useRef(false);
   const [name, setName] = useState(world.display_name || "");
   const [icon, setIcon] = useState(world.icon_data || null);
   const [banner, setBanner] = useState(world.banner_data || null);
@@ -61,10 +61,8 @@ export default function CustomizeModal({ world, onClose, onDone }) {
   };
 
   return (
-    <div className="modal-overlay"
-      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) onClose(); }}>
-      <div className="panel animate-floatUp" style={{ width: 560, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto", padding: 0 }}>
+    <AppOverlay label={`Customize ${world.display_name}`} onClose={onClose} dismissible={!saving}>
+      <div className="panel animate-floatUp" style={{ width: 560, padding: 0 }}>
         {/* live preview banner */}
         <div style={{ position: "relative", height: 130, background: "var(--bg-2)", overflow: "hidden", borderTopLeftRadius: "inherit", borderTopRightRadius: "inherit" }}>
           {banner && <img src={banner} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
@@ -115,7 +113,7 @@ export default function CustomizeModal({ world, onClose, onDone }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem", flexWrap: "wrap" }}>
             <button className="btn btn-ghost" type="button" onClick={() => { setIcon(null); setBanner(null); setAccent("#c1a56d"); }}>Reset visuals</button>
             <div style={{ display: "flex", gap: "0.6rem" }}>
-            <button className="btn btn-ghost" onClick={onClose}>{t("customize.cancel")}</button>
+            <button className="btn btn-ghost" onClick={onClose} disabled={saving}>{t("customize.cancel")}</button>
             <button className="btn btn-primary" onClick={save} disabled={saving}><Icon name="download" /> {saving ? t("customize.saving") : t("customize.save")}</button>
             </div>
           </div>
@@ -124,6 +122,6 @@ export default function CustomizeModal({ world, onClose, onDone }) {
           </p>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   );
 }

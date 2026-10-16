@@ -5,6 +5,7 @@ import { api, Icon, toast } from "@/components/ui";
 import ApplicationToolsBack from "@/components/ApplicationToolsBack";
 import useAdaptivePolling from "@/components/useAdaptivePolling";
 import { PageHeader } from "@/components/PageChrome";
+import AppOverlay from "@/components/AppOverlay";
 
 // The world tabs a code can be granted, in display order. Labels reuse the existing
 // world.tab.* strings. Remote guests get an operational view only.
@@ -266,11 +267,11 @@ function CodeModal({ t, worlds, code, onClose, onSaved }) {
   };
 
   return (
-    <Backdrop onClose={onClose}>
-      <div className="panel" style={{ width: "100%", maxWidth: 560, padding: "1.4rem", maxHeight: "88vh", overflowY: "auto" }}>
+    <AppOverlay label={code ? t("remote.editCode") : t("remote.newCode")} onClose={onClose} dismissible={!busy}>
+      <div className="panel" style={{ width: 560, padding: "1.4rem" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.9rem" }}>
           <h3 className="heading" style={{ fontSize: "1.15rem", margin: 0 }}>{code ? t("remote.editCode") : t("remote.newCode")}</h3>
-          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose}><Icon name="x" size={16} /></button>
+          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose} disabled={busy} aria-label={t("common.cancel")}><Icon name="x" size={16} /></button>
         </div>
 
         {code && (
@@ -311,7 +312,7 @@ function CodeModal({ t, worlds, code, onClose, onSaved }) {
           <button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? t("common.saving") : t("common.save")}</button>
         </div>
       </div>
-    </Backdrop>
+    </AppOverlay>
   );
 }
 
@@ -330,11 +331,11 @@ function AuditDrawer({ t, code, onClose }) {
     api(`/api/remote/codes/${code.id}/audit`).then((r) => setRows(r.audit || [])).catch(() => setRows([]));
   }, [code.id]);
   return (
-    <Backdrop onClose={onClose}>
-      <div className="panel" style={{ width: "100%", maxWidth: 620, padding: "1.4rem", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+    <AppOverlay label={t("remote.logTitle", { code: code.code })} onClose={onClose}>
+      <div className="panel" style={{ width: 620, padding: "1.4rem", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.9rem" }}>
           <h3 className="heading" style={{ fontSize: "1.15rem", margin: 0 }}>{t("remote.logTitle", { code: code.code })}</h3>
-          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose}><Icon name="x" size={16} /></button>
+          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose} aria-label={t("common.close")}><Icon name="x" size={16} /></button>
         </div>
         {rows === null ? <p className="subtle" style={{ fontWeight: 700 }}>{t("common.loading")}</p> :
           rows.length === 0 ? <p className="subtle" style={{ fontWeight: 700 }}>{t("remote.noLog")}</p> : (
@@ -351,15 +352,6 @@ function AuditDrawer({ t, code, onClose }) {
             </div>
           )}
       </div>
-    </Backdrop>
-  );
-}
-
-function Backdrop({ children, onClose }) {
-  return (
-    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 60, padding: "1rem" }}>
-      {children}
-    </div>
+    </AppOverlay>
   );
 }

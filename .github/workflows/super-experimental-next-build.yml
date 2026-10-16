@@ -44,6 +44,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check electron\stable-runtime.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check electron\startup-screen.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check electron\runtime-worker.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check electron\preload.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check lib\sync\manifest.js
@@ -58,6 +62,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-launcher-profiles.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-server-forks.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-server-migration.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-client-service.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-client-profile-cache.js
@@ -69,6 +77,8 @@ jobs:
           node scripts\check-world-heartbeat.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-cloud-storage.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-sync-delivery.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-player-cap.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -84,9 +94,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-stable-runtime.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-startup.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-ui-flow.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-window-layout.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-save-slots.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-world-repository.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-netinfo.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-cloud-publisher.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts\check-lifecycle-guard.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

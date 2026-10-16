@@ -22,11 +22,24 @@ export function PageHeader({ eyebrow, title, description, icon, image, actions, 
 }
 
 export function SegmentedMenu({ items, value, onChange, ariaLabel = "Page section" }) {
+  const selectedIndex = Math.max(0, items.findIndex((item) => item.id === value));
+  const move = (event, index) => {
+    const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    let next;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    else if (event.key in steps) next = (index + steps[event.key] + items.length) % items.length;
+    else return;
+    if (!items[next]) return;
+    event.preventDefault();
+    const buttons = event.currentTarget.parentElement.querySelectorAll('[role="tab"]');
+    onChange(items[next].id);
+    buttons[next]?.focus();
+  };
   return <nav className="segmented-menu" role="tablist" aria-label={ariaLabel} style={{ "--segment-count": Math.max(1, items.length) }}>
-    {items.map((item) => <button key={item.id} type="button" role="tab" aria-selected={value === item.id} className={value === item.id ? "active" : ""} onClick={() => onChange(item.id)}>
+    {items.map((item, index) => <button key={item.id} type="button" role="tab" tabIndex={index === selectedIndex ? 0 : -1} aria-selected={value === item.id} className={value === item.id ? "active" : ""} onKeyDown={(event) => move(event, index)} onClick={() => onChange(item.id)}>
       {item.icon && <Icon name={item.icon} size={17} />}
       <span><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</span>
     </button>)}
   </nav>;
 }
-

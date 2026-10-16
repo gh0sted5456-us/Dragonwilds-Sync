@@ -13,16 +13,17 @@ import ModsPanel from "@/components/ModsPanel";
 import PrereqsNotice from "@/components/PrereqsNotice";
 import AdminPanel from "@/components/AdminPanel";
 import TabPanelBoundary from "@/components/TabPanelBoundary";
+import AppOverlay from "@/components/AppOverlay";
 import useAdaptivePolling from "@/components/useAdaptivePolling";
 
 const TABS = [
   { id: "overview", labelKey: "world.tab.overview", icon: "grid" },
   { id: "console", labelKey: "world.tab.console", icon: "terminal" },
+  { id: "mods", labelKey: "world.tab.mods", icon: "shield" },
   { id: "settings", labelKey: "world.tab.settings", icon: "settings" },
   { id: "backups", labelKey: "world.tab.backups", icon: "download" },
   { id: "schedule", labelKey: "world.tab.schedule", icon: "clock" },
-  { id: "mods", labelKey: "world.tab.mods", icon: "shield" },
-  { id: "admin", labelKey: "world.tab.admin", icon: "settings" },
+  { id: "admin", label: "Profile & launch", icon: "users" },
 ];
 
 const ACTION_TOAST = { start: "toast.worldStarted", stop: "toast.worldStopped", restart: "toast.worldRestarted" };
@@ -91,10 +92,10 @@ export default function WorldDetail() {
 
   return (
     <div>
-      <Link href="/?mode=server" className="page-back"><Icon name="back" /> Back to Server Management</Link>
+      <Link href="/host" className="page-back"><Icon name="back" /> Back to Host</Link>
 
       {/* Header */}
-      <div className="panel" style={{ padding: 0, marginBottom: "1.2rem", overflow: "hidden", position: "relative", borderTop: `3px solid ${world.accent_color || "var(--accent)"}` }}>
+      <div className="panel server-workspace-header" style={{ padding: 0, marginBottom: "1.2rem", overflow: "hidden", position: "relative", borderTop: `2px solid ${world.accent_color || "var(--accent)"}` }}>
         {/* banner: top strip, fades downward */}
         {world.banner_data && (
           <div aria-hidden style={{
@@ -105,11 +106,12 @@ export default function WorldDetail() {
           }} />
         )}
         <div style={{ position: "relative", zIndex: 1, padding: "1.3rem 1.4rem", paddingTop: world.banner_data ? "6rem" : "1.3rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+        <div className="server-workspace-identity">
           <div style={{ width: 54, height: 54, borderRadius: 12, background: world.icon_data ? "transparent" : (world.accent_color || "var(--yellow)"), display: "grid", placeItems: "center", overflow: "hidden", boxShadow: world.icon_data ? "0 3px 12px rgba(0,0,0,0.4)" : "none", flexShrink: 0 }}>
             <img src={world.icon_data || "/icon.png"} alt="" style={{ width: world.icon_data ? "100%" : "84%", height: world.icon_data ? "100%" : "84%", objectFit: world.icon_data ? "cover" : "contain" }} />
           </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
+          <div className="server-workspace-copy">
+            <div className="eyebrow">DEDICATED SERVER PROFILE</div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
               <h1 className="heading" style={{ fontSize: "1.6rem", margin: 0 }}>{world.display_name}</h1>
               <StatusChip status={world.status} running={running} />
@@ -120,11 +122,11 @@ export default function WorldDetail() {
                 </span>
               )}
             </div>
-            <div className="subtle" style={{ fontWeight: 700, fontSize: "0.8rem", marginTop: 3 }}>
-              {live?.info?.servername || world.install_dir}
+            <div className="subtle" style={{ fontSize: "0.77rem", marginTop: 5 }}>
+              {world.platform === "windows" ? "Windows" : "Linux"} · Game port {world.game_port} · Build {world.build_id || "unknown"}
             </div>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <div className="server-workspace-actions">
             {typeof window !== "undefined" && window.desktop?.createProfileShortcut && <button className="btn btn-ghost" onClick={sendServerToDesktop}><Icon name="download" /> Send Server to Desktop</button>}
             <button className="btn btn-ghost" onClick={() => setCustomizing(true)} title={t("world.customize")}><Icon name="image" /> {t("world.customize")}</button>
             {running ? (
@@ -147,7 +149,10 @@ export default function WorldDetail() {
           </div>
         </div>
 
-        {/* quick stats */}
+        <details className="server-diagnostics" open={tab === "overview"}>
+        <summary><span><Icon name="activity" size={16} /> Server status & connection</span><small>Addresses, runtime stats & profile folder</small><Icon name="chevronRight" size={16} /></summary>
+        <div className="server-install-row"><span>Profile folder</span><code>{world.install_dir}</code></div>
+        {/* Diagnostics remain available without pushing every editor below them. */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px,1fr))", gap: "0.8rem", marginTop: "1.1rem" }}>
           <QuickStat label={t("common.players")} value={live?.metrics ? `${live.metrics.currentplayernum ?? live.players?.players?.length ?? 0}${live.metrics.maxplayernum ? "/" + live.metrics.maxplayernum : ""}` : "—"} />
           <QuickStat label={t("common.uptime")} value={live?.metrics ? fmtUptime(live.metrics.uptime) : "—"} />
@@ -159,19 +164,20 @@ export default function WorldDetail() {
 
         {/* connection URL */}
         <ConnectionBar world={world} />
+        </details>
         </div>
       </div>
 
       {/* Tabs */}
-      <nav className="page-tabs" aria-label="Server management sections">
+      <nav className="page-tabs server-section-menu" aria-label="Server management sections">
         {TABS.map((tb) => (
-          <button type="button" key={tb.id} className={`btn ${tab === tb.id ? "btn-primary" : "btn-ghost"}`} onClick={() => selectTab(tb.id)}>
-            <Icon name={tb.icon} size={16} /> {t(tb.labelKey)}
+          <button type="button" id={`server-tab-${tb.id}`} key={tb.id} aria-pressed={tab === tb.id} className={`btn ${tab === tb.id ? "btn-primary" : "btn-ghost"}`} onClick={() => selectTab(tb.id)}>
+            <Icon name={tb.icon} size={16} /> {tb.label || t(tb.labelKey)}
           </button>
         ))}
       </nav>
 
-      <div className="panel" style={{ padding: "1.3rem" }}>
+      <div className="panel server-workspace-panel" aria-labelledby={`server-tab-${tab}`} style={{ padding: "1.3rem" }}>
         {tab === "overview" && <TabSlot key="overview" id="overview"><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
         {tab === "console" && <TabSlot key="console" id="console"><LogsPanel worldId={id} /></TabSlot>}
         {tab === "settings" && <TabSlot key="settings" id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} onChange={load} /></TabSlot>}
@@ -213,7 +219,6 @@ function DeleteWorldModal({ world, onClose, onDeleted }) {
   const [mode, setMode] = useState("profile"); // "profile" | "disk"
   const [confirmName, setConfirmName] = useState("");
   const [busy, setBusy] = useState(false);
-  const downOnBackdrop = useRef(false);
 
   const withFiles = mode === "disk";
   const nameOk = !withFiles || confirmName.trim() === world.display_name;
@@ -228,14 +233,11 @@ function DeleteWorldModal({ world, onClose, onDeleted }) {
   };
 
   return (
-    <div
-      onMouseDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (e.target === e.currentTarget && downOnBackdrop.current) onClose(); }}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 60, padding: "1rem" }}>
+    <AppOverlay label={t("world.deleteTitle", { name: world.display_name })} onClose={onClose} dismissible={!busy}>
       <div className="panel" style={{ width: "100%", maxWidth: 520, padding: "1.4rem" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
           <h3 className="heading" style={{ fontSize: "1.15rem", margin: 0 }}>{t("world.deleteTitle", { name: world.display_name })}</h3>
-          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose}><Icon name="x" size={16} /></button>
+          <button className="btn btn-ghost" style={{ padding: "0.3rem 0.5rem" }} onClick={onClose} disabled={busy} aria-label={t("common.cancel")}><Icon name="x" size={16} /></button>
         </div>
         <p className="subtle" style={{ fontWeight: 600, fontSize: "0.82rem", marginTop: 0 }}>
           {t("world.deleteIntro")}
@@ -271,7 +273,7 @@ function DeleteWorldModal({ world, onClose, onDeleted }) {
           </button>
         </div>
       </div>
-    </div>
+    </AppOverlay>
   );
 }
 
@@ -312,8 +314,16 @@ function ConnectionBar({ world }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(null);
   const [lan, setLan] = useState(null);
+  const [publicAddress, setPublicAddress] = useState(null);
+  const [publicLookupDone, setPublicLookupDone] = useState(false);
   const port = world.game_port;
   useEffect(() => { api("/api/netinfo").then((r) => setLan(r.lan || [])).catch(() => setLan([])); }, []);
+  useEffect(() => {
+    let live = true;
+    api("/api/netinfo/public").then((r) => { if (live) setPublicAddress(r.address || null); })
+      .catch(() => {}).finally(() => { if (live) setPublicLookupDone(true); });
+    return () => { live = false; };
+  }, []);
   const copy = (text, which) => {
     try { navigator.clipboard.writeText(text); setCopied(which); setTimeout(() => setCopied(null), 1500); } catch {}
   };
@@ -330,6 +340,9 @@ function ConnectionBar({ world }) {
         )}
         {/* This PC only — 127.0.0.1 works solely from the machine running the server. */}
         <ConnectRow label={t("world.thisPcOnly")} value={`127.0.0.1:${port}`} which="local" copied={copied} onCopy={copy} />
+        {publicAddress ? <ConnectRow label="Public IP (internet)" value={`${publicAddress}:${port}`} which="public" copied={copied} onCopy={copy} /> :
+          <div className="panel-inset subtle" style={{ padding: "0.55rem 0.9rem", fontSize: "0.72rem" }}>Public IP: {publicLookupDone ? "Unavailable — check your connection or use your tunnel address." : "Checking…"}</div>}
+        <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 600 }}>Detected outbound IPv4 only. This does not confirm that UDP {port} is forwarded or the server is reachable; VPNs and tunnels may use a different address.</div>
         {lan && lan.length > 1 && (
           <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
             {t("world.otherAdapters")}{" "}

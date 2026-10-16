@@ -57,34 +57,39 @@ function world(id) {
   const savesB = world("server-b");
   const first = await supervisor.selectWorldSave("server-a", { repositoryId: standard.id });
   assert.equal(first.queued, false);
-  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["Standard.sav"]);
-  assert.equal(dbm.getWorld("server-a").default_world_name, "Standard");
+  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["server-a.sav"]);
+  assert.equal(dbm.getWorld("server-a").default_world_name, "server-a");
   assert.equal(dbm.getWorld("server-a").server_password, "keep-login");
-  assert.equal(provision.assertSelectedSaveReady("server-a").activeSave, "Standard.sav");
+  assert.equal(provision.assertSelectedSaveReady("server-a").activeSave, "server-a.sav");
 
   // A live process must not be stopped, restarted, or have its SaveGames changed.
   dbm.updateWorld("server-a", { process_id: process.pid, status: "running" });
   const queued = await supervisor.selectWorldSave("server-a", { repositoryId: custom.id });
   assert.equal(queued.queued, true);
   assert.equal(queued.restarted, false);
-  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["Standard.sav"]);
-  assert.equal(dbm.getWorld("server-a").default_world_name, "Standard");
+  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["server-a.sav"]);
+  assert.equal(dbm.getWorld("server-a").default_world_name, "server-a");
   assert.equal(supervisor.pendingWorldSave("server-a").repositoryId, custom.id);
+  assert.throws(() => repository.removeWorld(custom.id), /queued for a server/);
 
   dbm.updateWorld("server-a", { process_id: null, status: "stopped" });
   await supervisor.stopWorld("server-a", { graceful: false });
-  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["Custom.sav"]);
-  assert.equal(dbm.getWorld("server-a").default_world_name, "Custom");
+  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["server-a.sav"]);
+  assert.equal(dbm.getWorld("server-a").default_world_name, "server-a");
   assert.equal(supervisor.pendingWorldSave("server-a"), null);
-  assert.equal(provision.assertSelectedSaveReady("server-a").activeSave, "Custom.sav");
+  assert.equal(provision.assertSelectedSaveReady("server-a").activeSave, "server-a.sav");
 
   await supervisor.selectWorldSave("server-b", { repositoryId: standard.id });
-  assert.deepStrictEqual(fs.readdirSync(savesB).filter((name) => name.endsWith(".sav")), ["Standard.sav"]);
+  assert.deepStrictEqual(fs.readdirSync(savesB).filter((name) => name.endsWith(".sav")), ["server-b.sav"]);
   const sameNameSelection = await supervisor.selectWorldSave("server-b", { repositoryId: sameName.id });
-  assert.equal(sameNameSelection.activeSave, `Standard-${sameName.id.slice(0, 8)}.sav`);
+  assert.equal(sameNameSelection.activeSave, "server-b.sav");
+  assert.equal(sameNameSelection.slotName, `Standard-${sameName.id.slice(0, 8)}.sav`);
   assert(fs.existsSync(path.join(process.env.APP_MANAGER_DATA_DIR, "save-slots", "server-b", "Standard.sav")), "original same-named slot was lost");
+  assert(fs.existsSync(path.join(process.env.APP_MANAGER_DATA_DIR, "save-slots", "server-b", sameNameSelection.slotName)), "new same-named alias was lost");
   assert.deepStrictEqual(fs.readdirSync(savesB).filter((name) => name.endsWith(".sav")), [sameNameSelection.activeSave]);
-  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["Custom.sav"], "server profiles must retain independent saves");
+  assert.deepStrictEqual(fs.readdirSync(savesA).filter((name) => name.endsWith(".sav")), ["server-a.sav"], "server profiles must retain independent saves");
+  assert.equal(repository.removeWorld(hard.id).id, hard.id);
+  assert(!repository.listWorlds().some((item) => item.id === hard.id), "deleted repository item is still listed");
   console.log("World Repository and no-restart swap: OK");
 })().finally(() => {
   try { dbm.db().close(); } catch {}

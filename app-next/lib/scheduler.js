@@ -8,6 +8,7 @@ const appver = require("./appversion");
 const { createBackup } = require("./backups");
 const { notify } = require("./notify");
 const syncedMods = require("./mod-lanes");
+const forks = require("./server-forks");
 
 const g = globalThis;
 if (!g.__APP_SCHED) g.__APP_SCHED = { timer: null, updating: new Set(), backupSkipped: new Set(), autoUpdating: false };
@@ -238,6 +239,12 @@ async function checkUpdates() {
 async function updateWorld(worldId, onLog = () => {}, jobId = null, opts = {}) {
   const emit = (l) => { onLog(l); if (jobId) jobs.logJob(jobId, l); };
   const phase = (p, m) => { if (jobId) jobs.setPhase(jobId, p, m); };
+  if (jobs.listJobs().some((job) => job.id !== jobId && job.status === "running" && job.phase === "copy")) {
+    const error = "Wait for the Server profile migration or file refresh to finish before updating.";
+    emit(error);
+    if (jobId) jobs.finishJob(jobId, false, { worldId, error });
+    return { ok: false, error };
+  }
   if (ST.updating.has(worldId)) {
     if (jobId) jobs.finishJob(jobId, false, { worldId, error: "Already updating" });
     return { skipped: "already updating" };
@@ -265,14 +272,33 @@ async function updateWorld(worldId, onLog = () => {}, jobId = null, opts = {}) {
     // it's present before we try to run it.
     if (!steam.steamcmdInstalled()) {
       phase("steamcmd", "Installing SteamCMD…");
-      emit("SteamCMD not found — installing it first...");
-      await steam.ensureSteamCmd(emit);
+      emit("RSDW: SteamCMD not found — installing it first...");
+      await steam.ensureSteamCmd((line) => emit(`SteamCMD: ${line}`));
     }
-    phase("steamcmd", "Running SteamCMD update…");
-    emit("Running SteamCMD update...");
-    const res = await steam.installOrUpdate(w.install_dir, emit, w.platform);
-    if (!res.ok) throw new Error(`SteamCMD failed (code ${res.code})${res.detail ? `: ${res.detail}` : ""}`);
-    const bid = res.buildId || steam.readInstalledBuildId(w.install_dir);
+    const coreDir = dbm.getSetting("applicationSetup:serverDir", null);
+    const managed = coreDir && forks.managedFork(w, coreDir);
+    phase("steamcmd", managed ? "Updating shared Server Core with SteamCMD…" : "Running SteamCMD update…");
+    emit(managed ? "RSDW: updating the shared Server Core first" : "Running SteamCMD update...");
+    let res;
+    let bid;
+    if (managed) {
+      res = await forks.updateCore(coreDir, w.platform, { onLog: emit });
+      phase("copy", "Refreshing stopped Server profiles from Core…");
+      if (jobId) jobs.setProgress(jobId, 0, "RSDW: staging profile core files…");
+      const results = await forks.refreshStoppedProfiles(coreDir, {
+        onLog: emit,
+        onProgress: ({ worldName, completed, total, file }) => {
+          if (jobId) jobs.setProgress(jobId, Math.round(100 * completed / Math.max(1, total)), `RSDW: ${worldName} · ${completed}/${total} files · ${file}`);
+        },
+      });
+      const target = results.find((item) => item.worldId === worldId);
+      if (target?.error || target?.pending || !target) throw new Error(target?.error || "This Server profile could not be refreshed from Core");
+      bid = target.buildId || res.buildId;
+    } else {
+      res = await steam.installOrUpdate(w.install_dir, (line) => emit(`SteamCMD: ${line}`), w.platform);
+      if (!res.ok) throw new Error(`SteamCMD failed (code ${res.code})${res.detail ? `: ${res.detail}` : ""}`);
+      bid = res.buildId || steam.readInstalledBuildId(w.install_dir);
+    }
     if (bid) {
       for (const profile of dbm.listWorlds()) {
         if (String(profile.install_dir).toLowerCase() === String(w.install_dir).toLowerCase()) {

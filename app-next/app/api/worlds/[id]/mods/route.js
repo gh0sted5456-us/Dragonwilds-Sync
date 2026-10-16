@@ -15,19 +15,30 @@ export async function GET(req, { params }) {
 export async function PATCH(req, { params }) {
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "mods", action: "mods.sync", mutating: true });
   if (denied) return denied;
-  if (sup.isAlive(params.id)) return NextResponse.json({ ok: false, error: "Stop the server before changing its PAK destination." }, { status: 409 });
   try {
     const body = await req.json();
-    return NextResponse.json({ ok: true, ...mods.setPakInstallMode(params.id, body.pakInstallMode) });
+    const result = await sup.runMaintenance(params.id, () => mods.setPakInstallMode(params.id, body.pakInstallMode));
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }); }
 }
 
 export async function PUT(req, { params }) {
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "mods", action: "mods.sync", mutating: true });
   if (denied) return denied;
-  if (sup.isAlive(params.id)) return NextResponse.json({ ok: false, error: "Stop the server before changing loader mod states." }, { status: 409 });
   try {
     const body = await req.json();
-    return NextResponse.json({ ok: true, ...mods.setLoaderEnabled(params.id, body.lane, body.selectionKey, body.enabled) });
+    const result = await sup.runMaintenance(params.id, () => mods.setLoaderEnabled(params.id, body.lane, body.selectionKey, body.enabled));
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }); }
+}
+
+export async function DELETE(req, { params }) {
+  const denied = ra.guardResponse(req, { worldId: params.id, tab: "mods", action: "mods.sync", mutating: true });
+  if (denied) return denied;
+  try {
+    const body = await req.json();
+    if (typeof body?.selectionKey !== "string") throw new Error("Choose a detected server mod to delete.");
+    const result = await sup.runMaintenance(params.id, () => mods.deleteServerMod(params.id, body.selectionKey));
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }); }
 }

@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui";
+import SyncProgressPanel from "@/components/SyncProgressPanel";
+import Link from "next/link";
 
 // Shared client helpers for the downloads/updates system: a polling hook used by
 // both the sidebar indicator and the Downloads page, plus the job card UI.
@@ -11,7 +13,7 @@ const PHASE_LABELS = {
   download: "Downloading server files", verify: "Verifying files", install: "Installing",
   backup: "Backing up", settings: "Writing settings", finalizing: "Finishing up",
   runtime: "Installing mod loader", mod: "Downloading mod", cleanup: "Cleaning saves",
-  copy: "Forking private server files",
+  copy: "Refreshing Server profile files",
 };
 export function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
 export function labelFor(job) { return job.worldName || (job.type === "install" ? "New server" : job.type === "redist" ? "Prerequisites" : job.type === "runtime" ? "Mod loader" : job.type === "sync" ? "World mod sync" : job.type === "mod" ? "Mod download" : job.type === "cleanup" ? "Save cleaner" : "Server update"); }
@@ -103,7 +105,7 @@ export function JobCard({ job, onDismiss, defaultShowLog = false, logHeight = 20
 
   const color = job.status === "error" ? "var(--red)" : job.status === "success" ? "var(--green-bright)" : "var(--accent)";
   const running = job.status === "running";
-  const typeLabel = job.type === "mod" ? "Mod download" : job.type === "cleanup" ? "Save cleanup" : t(job.type === "install" ? "job.install" : job.type === "redist" ? "job.prereqs" : "job.update");
+  const typeLabel = job.type === "sync" ? "World file sync" : job.type === "mod" ? "Mod download" : job.type === "cleanup" ? "Save cleanup" : t(job.type === "install" ? "job.install" : job.type === "redist" ? "job.prereqs" : "job.update");
   const cardLabel = labelFor(job);
 
   return (
@@ -118,7 +120,7 @@ export function JobCard({ job, onDismiss, defaultShowLog = false, logHeight = 20
             <span className="subtle" style={{ fontSize: "0.68rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>{typeLabel}</span>
           </div>
           <div className="subtle" style={{ fontSize: "0.78rem", fontWeight: 600 }}>
-            {running ? (job.message || t(`job.phase.${job.phase}`, { defaultValue: phaseLabel(job.phase) })) : (job.status === "success" ? t("job.completed") : (job.error || t("job.failed")))}
+            {job.type === "sync" ? job.message : running ? (job.message || t(`job.phase.${job.phase}`, { defaultValue: phaseLabel(job.phase) })) : (job.status === "success" ? t("job.completed") : (job.error || t("job.failed")))}
           </div>
         </div>
         {running && job.percent != null && <span style={{ fontSize: "0.9rem", fontWeight: 800, color }}>{job.percent}%</span>}
@@ -128,8 +130,9 @@ export function JobCard({ job, onDismiss, defaultShowLog = false, logHeight = 20
           </button>
         )}
       </div>
-      {running && <ProgressBar percent={job.percent} style={{ marginTop: "0.7rem" }} />}
+      {job.type === "sync" ? <SyncProgressPanel job={job} compact /> : running && <ProgressBar percent={job.percent} style={{ marginTop: "0.7rem" }} />}
       <div style={{ marginTop: 8, display: "flex", gap: "0.8rem", alignItems: "center" }}>
+        {job.type === "sync" && job.worldId && <Link href={`/profiles/${encodeURIComponent(job.worldId)}/player`} style={{ fontSize: ".75rem" }}>{job.status === "error" ? "Retry in World →" : "Open World →"}</Link>}
         <button onClick={() => setShowLog((s) => !s)} className="subtle" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700, padding: 0 }}>
           {showLog ? t("job.hideLog") : t("job.showLog")}
         </button>

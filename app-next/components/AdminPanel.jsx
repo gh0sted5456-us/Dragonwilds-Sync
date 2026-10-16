@@ -28,31 +28,39 @@ export default function AdminPanel({ world, running, onChange }) {
   const [installDir, setInstallDir] = useState(world.install_dir || "");
   const [ownerId, setOwnerId] = useState(world.owner_id || "");
   const [defaultWorldName, setDefaultWorldName] = useState(world.default_world_name || "");
-  // No-op: touch file for dependency tracking.
   const [movingDir, setMovingDir] = useState(false);
-  const [sharedInstall, setSharedInstall] = useState(false);
+  const [migrationPlan, setMigrationPlan] = useState(null);
+  const [migrationError, setMigrationError] = useState("");
+  const [reviewingMigration, setReviewingMigration] = useState(false);
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false);
+  const [requestingMigration, setRequestingMigration] = useState(false);
   const [forkJobId, setForkJobId] = useState(null);
   const forkJobs = useJobsPoll();
   const forkJob = forkJobs.find((job) => job.id === forkJobId);
   const forkNotified = useRef(false);
   useEffect(() => {
-    api("/api/application-setup/server").then((r) => {
-      const shared = String(r.server?.installDir || "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-      const local = String(world.install_dir || "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-      setSharedInstall(!!shared && shared === local);
-    }).catch(() => {});
-  }, [world.install_dir]);
+    let cancelled = false;
+    setInstallDir(world.install_dir || "");
+    setMigrationConfirmed(false);
+    setReviewingMigration(false);
+    api(`/api/worlds/${world.world_id}/fork`).then((r) => {
+      if (!cancelled) { setMigrationPlan(r.plan); setMigrationError(""); }
+    }).catch((e) => { if (!cancelled) { setMigrationPlan(null); setMigrationError(e.message); } });
+    return () => { cancelled = true; };
+  }, [world.world_id, world.install_dir, running]);
   useEffect(() => {
     if (forkJob?.status !== "success" || forkNotified.current) return;
     forkNotified.current = true;
-    setSharedInstall(false);
-    toast("Server files forked. The original shared folder is untouched.", "success");
+    setMigrationPlan(null);
+    setReviewingMigration(false);
+    toast("Migration verified. Original files retained; Server remains stopped.", "success");
     onChange();
   }, [forkJob?.status, onChange]);
   const [ports, setPorts] = useState({ game_port: world.game_port, query_port: world.query_port, rest_api_port: world.rest_api_port });
   const [savingPorts, setSavingPorts] = useState(false);
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
   const portsChanged = ["game_port", "query_port", "rest_api_port"].some((k) => Number(ports[k]) !== Number(world[k]));
+  const migrating = requestingMigration || forkJob?.status === "running";
 
   const savePorts = async () => {
     if (running) return toast(t("admin.stopBeforePorts"), "error");
@@ -83,14 +91,26 @@ export default function AdminPanel({ world, running, onChange }) {
     finally { setMovingDir(false); }
   };
 
-  const forkSharedInstall = async () => {
+  const reviewMigration = async () => {
     try {
-      const result = await api(`/api/worlds/${world.world_id}/fork`, { method: "POST" });
+      const result = await api(`/api/worlds/${world.world_id}/fork`);
+      setMigrationPlan(result.plan); setMigrationError(""); setMigrationConfirmed(false);
+      setReviewingMigration(true);
+    } catch (e) { setMigrationError(e.message); toast(e.message, "error"); }
+  };
+
+  const migrateInstall = async () => {
+    if (!migrationConfirmed || !migrationPlan?.canMigrate || migrating) return;
+    setRequestingMigration(true);
+    try {
+      const { source, destination, coreDir } = migrationPlan;
+      const result = await api(`/api/worlds/${world.world_id}/fork`, { method: "POST", body: { confirm: true, source, destination, coreDir } });
       forkNotified.current = false;
       setForkJobId(result.jobId);
       try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
-      toast("Copying current Server files to a private profile folder. Follow it in Downloads.", "success");
+      toast("Migrating and verifying Server files. Follow progress in Downloads.", "success");
     } catch (e) { toast(e.message, "error"); }
+    finally { setRequestingMigration(false); }
   };
 
   const saveProfile = async () => {
@@ -224,20 +244,30 @@ export default function AdminPanel({ world, running, onChange }) {
         </p>
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <input className="input" value={installDir} onChange={(e) => setInstallDir(e.target.value)}
-            disabled={running || movingDir}
+            disabled={running || movingDir || migrating}
             placeholder={isElectron ? t("create.browseFolderPlaceholder") : "e.g. D:\\SteamLibrary\\steamapps\\common\\GameServer"} />
-          <button className="btn btn-ghost" onClick={pickDir} disabled={running || movingDir}><Icon name="folder" /> {t("common.browse")}</button>
+          <button className="btn btn-ghost" onClick={pickDir} disabled={running || movingDir || migrating}><Icon name="folder" /> {t("common.browse")}</button>
           <button className="btn btn-primary" onClick={changeInstallDir}
-            disabled={running || movingDir || !installDir.trim() || installDir.trim() === world.install_dir}>
+            disabled={running || movingDir || migrating || !installDir.trim() || installDir.trim() === world.install_dir}>
             {movingDir ? t("common.checking") : t("common.change")}
           </button>
         </div>
         {running && <p className="subtle" style={{ fontWeight: 700, fontSize: "0.74rem", marginTop: 4 }}>{t("admin.stopToChangeFolder")}</p>}
-        {sharedInstall && <div className="panel-inset" style={{ marginTop: 12, padding: ".9rem" }}>
-          <strong>This profile still uses the shared Server folder.</strong>
-          <p className="subtle" style={{ fontSize: ".76rem", margin: "6px 0 10px" }}>When this is the active profile and all Servers are stopped, copy the current on-disk save and server files into its own folder. The original files stay in place. Check that the current save belongs to this profile before migrating.</p>
-          <button className="btn btn-primary" disabled={running || forkJob?.status === "running"} onClick={forkSharedInstall}><Icon name="folder" /> Fork this Server's files</button>
-        </div>}
+        <div className="panel-inset" style={{ marginTop: 12, padding: ".9rem" }}>
+          <strong>Managed Server folder migration</strong>
+          <p className="subtle" style={{ fontSize: ".78rem", margin: "6px 0 10px" }}>Copy an older private or shared installation into the configured RSDW/Profiles folder. Saves, settings, credentials and mods are verified before switching paths. The original folder remains available for recovery. Migration never starts or restarts the Server.</p>
+          {(migrationError || (migrationPlan && !migrationPlan.canMigrate)) && <p className="subtle" role="status">{migrationError || migrationPlan.reason}</p>}
+          <button className="btn btn-ghost" disabled={running || migrating} onClick={reviewMigration}><Icon name="folder" /> Review migration</button>
+          {reviewingMigration && migrationPlan && <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+            <div><span className="label">Current folder · retained as recovery copy</span><code style={{ display: "block", overflowWrap: "anywhere" }}>{migrationPlan.source}</code></div>
+            <div><span className="label">New private profile folder</span><code style={{ display: "block", overflowWrap: "anywhere" }}>{migrationPlan.destination}</code></div>
+            <div><span className="label">Shared Server Core</span><code style={{ display: "block", overflowWrap: "anywhere" }}>{migrationPlan.coreDir}</code></div>
+            {migrationPlan.shared && <p className="subtle">This shared folder must contain this profile's current save. All hosted Servers must be stopped.</p>}
+            {migrationPlan.resume && <p className="subtle">An interrupted migration left a verified copy. Both folders will be checked again before completing.</p>}
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><input type="checkbox" checked={migrationConfirmed} disabled={!migrationPlan.canMigrate || migrating} onChange={(e) => setMigrationConfirmed(e.target.checked)} /> I reviewed these paths and confirmed that the current save belongs to this profile.</label>
+            <div><button className="btn btn-primary" disabled={running || migrating || !migrationConfirmed || !migrationPlan.canMigrate} onClick={migrateInstall}>{migrating ? "Migrating…" : migrationPlan.resume ? "Verify and finish migration" : "Migrate and verify"}</button></div>
+          </div>}
+        </div>
         {forkJob && <div style={{ marginTop: 10 }}><JobCard job={forkJob} defaultShowLog /></div>}
       </section>
 

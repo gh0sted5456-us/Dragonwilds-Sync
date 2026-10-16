@@ -194,6 +194,10 @@ function readInstalledBuildIdForApp(installDir, appId) {
 }
 
 function readInstalledBuildId(installDir) {
+  // Managed forks are not SteamCMD installations. Their verified base-file
+  // ledger is authoritative; a retained legacy .acf can contain stale metadata.
+  const ledger = require("./server-forks").readLedger(installDir);
+  if (ledger && /^\d+$/.test(String(ledger.buildId || ""))) return String(ledger.buildId);
   return readInstalledBuildIdForApp(installDir, DRAGONWILDS_APPID);
 }
 

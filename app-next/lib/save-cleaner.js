@@ -4,11 +4,13 @@ const crypto = require("crypto");
 const { P } = require("./paths");
 const jobs = require("./jobs");
 const profileSaves = require("./profile-saves");
+const worldRepository = require("./world-repository");
 
 const SOURCE = "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main";
 const CACHE_MAX_AGE = 6 * 60 * 60 * 1000;
 const MAX_PLAYER_FILE = 64 * 1024 * 1024;
 const MAX_PLAYER_FILES = 512;
+const MAX_WORLD_FILE = 512 * 1024 * 1024;
 const PREVIEWS = globalThis.__RSDW_SAVE_CLEANER_PREVIEWS || new Map();
 globalThis.__RSDW_SAVE_CLEANER_PREVIEWS = PREVIEWS;
 
@@ -21,6 +23,17 @@ const CATALOG_FILES = {
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function digestFile(file) {
+  const hash = crypto.createHash("sha256");
+  const fd = fs.openSync(file, "r");
+  const chunk = Buffer.allocUnsafe(256 * 1024);
+  try {
+    let count;
+    while ((count = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) hash.update(chunk.subarray(0, count));
+  } finally { fs.closeSync(fd); }
+  return hash.digest("hex");
 }
 
 function cachePath() {
@@ -175,13 +188,16 @@ function playerFiles(sourcePath) {
   if (!stat.isDirectory()) throw new Error("Player save path must be a JSON file or SaveCharacter folder");
   const files = [];
   const pending = [target];
-  while (pending.length && files.length < MAX_PLAYER_FILES) {
+  while (pending.length) {
     const current = pending.pop();
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       if (entry.isSymbolicLink()) continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) pending.push(full);
-      else if (entry.isFile() && /\.json$/i.test(entry.name)) files.push(full);
+      else if (entry.isFile() && /\.json$/i.test(entry.name)) {
+        if (files.length >= MAX_PLAYER_FILES) throw new Error(`Choose a smaller folder; at most ${MAX_PLAYER_FILES} player saves can be inspected together`);
+        files.push(full);
+      }
     }
   }
   if (!files.length) throw new Error("No player JSON saves were found in this folder");
@@ -196,9 +212,11 @@ async function previewPlayer(sourcePath, jobId) {
   const files = playerFiles(sourcePath);
   for (let index = 0; index < files.length; index++) {
     const file = files[index];
-    const buffer = fs.readFileSync(file);
-    if (!buffer.length || buffer.length > MAX_PLAYER_FILE) { skipped.push({ path: file, reason: "Size outside safety bounds" }); continue; }
     try {
+      const size = fs.statSync(file).size;
+      if (!size || size > MAX_PLAYER_FILE) { skipped.push({ path: file, reason: "Size outside safety bounds" }); continue; }
+      const buffer = fs.readFileSync(file);
+      if (!buffer.length || buffer.length > MAX_PLAYER_FILE) { skipped.push({ path: file, reason: "Size outside safety bounds" }); continue; }
       const decoded = decodeDocument(buffer);
       const source = JSON.parse(decoded.text);
       const planned = planPlayerDocument(source, catalog);
@@ -222,15 +240,53 @@ function worldCacheFor(savePath) {
   return { target, cache: path.join(saved, "SpudCache") };
 }
 
+function inspectWorldSave(file) {
+  const size = fs.statSync(file).size;
+  if (size < 8 || size > MAX_WORLD_FILE) throw new Error("World save is outside the supported size range");
+  const fd = fs.openSync(file, "r");
+  const header = Buffer.alloc(8);
+  const chunks = [];
+  let formatStatus = "verified";
+  let formatWarning = null;
+  try {
+    if (fs.readSync(fd, header, 0, 8, 0) !== 8 || header.toString("ascii", 0, 4) !== "SAVE") {
+      throw new Error("World file is not a supported Dragonwilds SAVE document");
+    }
+    const declaredSize = header.readUInt32LE(4) + 8;
+    if (declaredSize !== size) {
+      formatStatus = "unverified";
+      formatWarning = `SAVE envelope declares ${declaredSize} bytes; file contains ${size}. No binary edits are permitted.`;
+    } else {
+      let cursor = 8;
+      while (cursor < size && chunks.length < 128) {
+        if (cursor + 8 > size || fs.readSync(fd, header, 0, 8, cursor) !== 8) { formatStatus = "unverified"; break; }
+        const tag = header.toString("ascii", 0, 4);
+        const length = header.readUInt32LE(4);
+        if (!/^[A-Za-z0-9_]{4}$/.test(tag) || length > size - cursor - 8) { formatStatus = "unverified"; break; }
+        chunks.push({ tag, bytes: length });
+        cursor += 8 + length;
+      }
+      if (cursor !== size || chunks.length >= 128 || !chunks.some((chunk) => chunk.tag === "LVLS")) {
+        formatStatus = "unverified";
+      }
+      if (formatStatus !== "verified") formatWarning = "The top-level SPUD chunks could not be fully verified. The save is left untouched.";
+    }
+  } finally { fs.closeSync(fd); }
+  let worldType = null;
+  let rawMode = null;
+  try { ({ detectedWorldType: worldType, rawMode } = worldRepository.detectWorldType(file)); } catch {}
+  return { size, formatStatus, formatWarning, chunks, worldType, rawMode };
+}
+
 function previewWorld(sourcePath, jobId) {
   jobs.setProgress(jobId, 25, "Validating world save…");
   const { target, cache } = worldCacheFor(sourcePath);
-  const header = Buffer.alloc(4);
-  const descriptor = fs.openSync(target, "r");
-  try { fs.readSync(descriptor, header, 0, 4, 0); } finally { fs.closeSync(descriptor); }
-  if (header.toString("ascii") !== "SAVE") throw new Error("World file is not a supported Dragonwilds SAVE document");
+  const world = inspectWorldSave(target);
   const entries = [];
+  let cacheRealPath = null;
   if (fs.existsSync(cache)) {
+    if (fs.lstatSync(cache).isSymbolicLink() || !fs.statSync(cache).isDirectory()) throw new Error("World cache must be a local folder, not a linked path");
+    cacheRealPath = fs.realpathSync(cache);
     const pending = [cache];
     while (pending.length) {
       const current = pending.pop();
@@ -240,17 +296,18 @@ function previewWorld(sourcePath, jobId) {
         if (entry.isDirectory()) pending.push(full);
         else if (entry.isFile() && /\.lvl$/i.test(entry.name)) {
           const stat = fs.statSync(full);
-          entries.push({ path: full, name: path.relative(cache, full), size: stat.size, hash: sha256(fs.readFileSync(full)) });
+          entries.push({ path: full, name: path.relative(cache, full), size: stat.size, hash: digestFile(full) });
         }
       }
     }
   }
   jobs.setProgress(jobId, 95, "World cache inspection complete");
   return {
-    kind: "world", sourcePath: target, cachePath: cache, cacheFiles: entries,
+    kind: "world", sourcePath: target, cachePath: cache, cacheRealPath, cacheFiles: entries,
+    world,
     bytes: entries.reduce((sum, row) => sum + row.size, 0), removed: [],
     binaryScrubAvailable: false,
-    summary: entries.length ? `${entries.length} rebuildable SPUD cache file${entries.length === 1 ? "" : "s"} ready to archive` : "SPUD cache is already clean",
+    summary: entries.length ? `${entries.length} rebuildable cache file${entries.length === 1 ? "" : "s"} ready to archive` : "No rebuildable cache files found",
   };
 }
 
@@ -294,29 +351,68 @@ function applyPlayer(preview, jobId) {
 
 function applyWorld(preview, jobId) {
   const cache = preview.cachePath;
-  if (!fs.existsSync(cache) || !preview.cacheFiles.length) return { changed: 0, removed: 0, backup: null };
-  const current = previewWorld(preview.sourcePath, null).cacheFiles;
-  const before = new Map(preview.cacheFiles.map((row) => [row.name.toLowerCase(), row.hash]));
-  if (current.length !== preview.cacheFiles.length || current.some((row) => before.get(row.name.toLowerCase()) !== row.hash)) {
-    throw new Error("SPUD cache changed after preview; close Dragonwilds and inspect it again");
-  }
+  if (!preview.cacheFiles.length) return { changed: 0, removed: 0, backup: null };
+  const assertUnchanged = () => {
+    const current = previewWorld(preview.sourcePath, null);
+    const before = new Map(preview.cacheFiles.map((row) => [row.name, row.hash]));
+    if (current.cacheRealPath !== preview.cacheRealPath || current.cacheFiles.length !== before.size || current.cacheFiles.some((row) => before.get(row.name) !== row.hash)) {
+      throw new Error("SPUD cache changed after preview; close Dragonwilds and inspect it again");
+    }
+  };
+  const assertLocalFile = (row) => {
+    if (!/\.lvl$/i.test(row.name) || path.isAbsolute(row.name) || row.name.split(/[\\/]/).includes("..")) throw new Error("Invalid world cache entry");
+    const file = path.join(cache, row.name);
+    if (fs.lstatSync(file).isSymbolicLink() || fs.realpathSync(file) !== path.join(preview.cacheRealPath, row.name)) {
+      throw new Error("World cache path changed after preview; inspect it again");
+    }
+    return file;
+  };
+  assertUnchanged();
+  jobs.logJob(jobId, `Archiving ${preview.cacheFiles.length} reviewed .lvl cache files. World save remains unchanged: ${preview.sourcePath}`);
   jobs.setProgress(jobId, 20, "Archiving SPUD cache…");
   const backupRoot = backupDestination("world");
-  fs.mkdirSync(backupRoot, { recursive: true });
   const destination = path.join(backupRoot, "SpudCache");
-  fs.cpSync(cache, destination, { recursive: true, errorOnExist: true });
-  const copiedFiles = preview.cacheFiles.filter((row) => {
+  for (let index = 0; index < preview.cacheFiles.length; index++) {
+    const row = preview.cacheFiles[index];
+    const file = assertLocalFile(row);
     const copied = path.join(destination, row.name);
-    return fs.existsSync(copied) && sha256(fs.readFileSync(copied)) === row.hash;
-  });
-  if (copiedFiles.length !== preview.cacheFiles.length) throw new Error("SPUD cache backup verification failed; original cache was left untouched");
-  const previous = `${cache}.previous-${crypto.randomUUID()}`;
-  fs.renameSync(cache, previous);
-  try { fs.mkdirSync(cache, { recursive: true }); }
-  catch (error) { fs.renameSync(previous, cache); throw error; }
-  fs.rmSync(previous, { recursive: true, force: true });
-  jobs.setProgress(jobId, 90, "Verified an empty rebuildable SPUD cache");
-  return { changed: preview.cacheFiles.length, removed: preview.cacheFiles.length, backup: destination };
+    fs.mkdirSync(path.dirname(copied), { recursive: true });
+    fs.copyFileSync(file, copied, fs.constants.COPYFILE_EXCL);
+    if (digestFile(copied) !== row.hash) throw new Error("SPUD cache backup verification failed; original cache was left untouched");
+    jobs.setProgress(jobId, 20 + Math.round(((index + 1) / preview.cacheFiles.length) * 40), `Verified backup ${index + 1} of ${preview.cacheFiles.length} cache files…`);
+  }
+  assertUnchanged();
+  jobs.logJob(jobId, `Cache backup verified: ${destination}`);
+  // Only reviewed .lvl files are removed. Unknown files, subfolders and links
+  // stay in place; there is never a recursive delete of the live cache folder.
+  const staged = [];
+  const token = crypto.randomUUID();
+  try {
+    for (const row of preview.cacheFiles) {
+      const file = assertLocalFile(row);
+      const temporary = `${file}.${token}.rsdw-cache-archive`;
+      fs.renameSync(file, temporary);
+      staged.push({ file, temporary, copied: path.join(destination, row.name) });
+      if (digestFile(temporary) !== row.hash) throw new Error("SPUD cache changed during archiving; close Dragonwilds and inspect it again");
+    }
+    for (let index = 0; index < staged.length; index++) {
+      fs.unlinkSync(staged[index].temporary);
+      jobs.setProgress(jobId, 65 + Math.round(((index + 1) / staged.length) * 30), `Archived ${index + 1} of ${staged.length} reviewed cache files…`);
+    }
+  } catch (error) {
+    const failed = [];
+    for (const row of staged.reverse()) {
+      try {
+        if (fs.existsSync(row.file)) { failed.push(row.file); continue; }
+        if (fs.existsSync(row.temporary)) fs.renameSync(row.temporary, row.file);
+        else fs.copyFileSync(row.copied, row.file, fs.constants.COPYFILE_EXCL);
+      } catch { failed.push(row.file); }
+    }
+    if (failed.length) throw new Error(`${error.message}. Some cache files could not be restored; recovery backup: ${destination}`);
+    throw new Error(`${error.message}. Original cache restored; recovery backup: ${destination}`);
+  }
+  jobs.logJob(jobId, "Reviewed cache files cleared. Other files and folders remain in place; Dragonwilds rebuilds the cache on its next launch.");
+  return { changed: preview.cacheFiles.length, removed: preview.cacheFiles.length, backup: destination, originalUntouched: true };
 }
 
 function rememberPreview(preview) {
@@ -348,17 +444,20 @@ function startPreview(kind, sourcePath) {
 
 function startClean(previewId) {
   prunePreviews();
-  const preview = PREVIEWS.get(String(previewId || ""));
+  const id = String(previewId || "");
+  const preview = PREVIEWS.get(id);
   if (!preview) throw new Error("Cleanup preview expired; preview the save again");
+  if (preview.cleanJobId) return preview.cleanJobId;
   const jobId = jobs.createJob({ type: "cleanup", worldName: preview.kind === "player" ? "Player Save Cleaner" : "World Cleaner" });
+  preview.cleanJobId = jobId;
   setTimeout(() => {
     try {
       const result = preview.kind === "player" ? applyPlayer(preview, jobId) : applyWorld(preview, jobId);
       const job = jobs.getJob(jobId);
       if (job) job.result = result;
-      PREVIEWS.delete(previewId);
+      PREVIEWS.delete(id);
       jobs.finishJob(jobId, true);
-    } catch (error) { jobs.finishJob(jobId, false, { error: error.message }); }
+    } catch (error) { delete preview.cleanJobId; jobs.finishJob(jobId, false, { error: error.message }); }
   }, 0);
   return jobId;
 }
@@ -377,5 +476,5 @@ function listCandidates(kind) {
 
 module.exports = {
   startPreview, startClean, listCandidates, readCachedCatalog, loadCatalog,
-  planPlayerDocument, catalogFromPayloads, decodeDocument, encodeDocument,
+  planPlayerDocument, catalogFromPayloads, decodeDocument, encodeDocument, inspectWorldSave,
 };

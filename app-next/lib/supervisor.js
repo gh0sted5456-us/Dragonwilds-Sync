@@ -212,6 +212,19 @@ async function startWorldUnlocked(worldId) {
   // active profile or spawning another dedicated server.
   require("./server-process-guard").assertNoConflictingServer(world);
 
+  // A core update may have been published while this Server profile was
+  // running. Apply its verified base-file delta only now, while launch owns
+  // the profile lifecycle queue and before touching saves or mod loaders.
+  const forks = require("./server-forks");
+  const coreDir = dbm.getSetting("applicationSetup:serverDir", null);
+  if (coreDir && forks.managedFork(world, coreDir) && forks.readLedger(world.install_dir)) {
+    const result = await forks.refreshFork(coreDir, world, {
+      onLog: (line) => pushLog(worldId, line),
+      onProgress: ({ completed, total, file }) => pushLog(worldId, `RSDW core files ${completed}/${total}: ${file}`),
+    });
+    if (result.buildId) dbm.updateWorld(worldId, { build_id: result.buildId, latest_known_build_id: result.buildId });
+  }
+
   // A running server keeps its world untouched. A queued selection is copied
   // into this profile's SaveGames only after it has stopped, immediately before
   // the next launch. Failure blocks launch instead of loading a fallback world.
@@ -466,6 +479,13 @@ function startWorld(worldId, { automatic = false } = {}) {
   });
 }
 
+function runMaintenance(worldId, task, kind = "maintenance") {
+  return serializeLifecycle(worldId, kind, async () => {
+    if (isAlive(worldId)) throw new Error("Stop this Server profile before refreshing core files");
+    return task();
+  });
+}
+
 function stopWorld(worldId, options = {}) {
   // Record the operator's intent before waiting for an active start/restart. Any
   // queued automatic relaunch sees this immediately and becomes a no-op.
@@ -538,6 +558,13 @@ function selectWorldSave(worldId, selection) {
 
 function switchWorldSave(worldId, slotName) {
   return selectWorldSave(worldId, { slotName });
+}
+
+function removeWorldSave(worldId, selection) {
+  if (!dbm.getWorld(worldId)) return Promise.reject(new Error("World not found"));
+  return serializeLifecycle(worldId, "remove-world-save", () => selection.repositoryId
+    ? require("./world-repository").removeWorld(selection.repositoryId)
+    : require("./provision").removeSaveSlot(worldId, selection.slotName));
 }
 
 async function importAndSwitchWorldSave(worldId, sourcePath) {
@@ -619,8 +646,8 @@ function splitLines(buf) {
 }
 
 module.exports = {
-  serverBinary, shippingBinary, hideConsoleEnabled, buildArgs, startWorld, stopWorld, restartWorld,
-  switchWorldSave, importAndSwitchWorldSave, selectWorldSave, pendingWorldSave,
+  serverBinary, shippingBinary, hideConsoleEnabled, buildArgs, startWorld, stopWorld, restartWorld, runMaintenance,
+  switchWorldSave, importAndSwitchWorldSave, selectWorldSave, pendingWorldSave, removeWorldSave,
   isRunning, isAlive, pidAlive, getLogs, subscribe, pushLog, ensureGuardian, stopManagedWorlds,
   __testing: { serializeLifecycle },
 };

@@ -272,7 +272,7 @@ function contains(rel, needle, message) {
   contains("electron/preload.js", "installAppUpdate");
   contains("electron/main.js", 'ipcMain.handle("install-app-update"');
   contains("electron/portable-update.js", "allowedDownloadUrl");
-  contains("../.github/workflows/super-experimental-next-build.yml", "Publish self-update prerelease");
+  contains("../.github/workflows/windows-release.yml", "Publish self-update prerelease");
 }
 
 // Desktop autostart is opt-in and owned Servers receive a graceful quit request.

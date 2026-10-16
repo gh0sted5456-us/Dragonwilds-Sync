@@ -1,0 +1,88 @@
+name: RSDW Sync Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - app-next/**
+      - .github/workflows/windows-release.yml
+      - .github/scripts/publish-windows-release.ps1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rsdw-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Verify and publish Windows portable
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app-next/package-lock.json
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Run every isolated release regression check
+        run: npm run test:release
+      - name: Build Next application
+        run: npm run build:next
+      - name: Assemble standalone runtime
+        run: npm run prepare:standalone
+      - name: Build isolated portable Windows executable
+        run: npx --no-install electron-builder --win portable --x64 --publish never
+      - name: Verify portable Windows output
+        shell: powershell
+        run: |
+          $artifacts = @(Get-ChildItem -LiteralPath release -Filter 'RSDW-Sync-Super-Experimental-*-portable.exe')
+          if ($artifacts.Count -ne 1) { throw 'Expected exactly one portable Windows executable.' }
+          $artifact = $artifacts[0]
+          $stream = [System.IO.File]::OpenRead($artifact.FullName)
+          try { if ($stream.ReadByte() -ne 77 -or $stream.ReadByte() -ne 90) { throw 'Invalid executable header.' } }
+          finally { $stream.Dispose() }
+          foreach ($name in @('version.dll','dwmapi.dll','UE4SS.dll')) {
+            if (Test-Path -LiteralPath (Join-Path $artifact.DirectoryName $name)) { throw "Forbidden sidecar DLL: $name" }
+          }
+          node -e "const a=require('assert'),fs=require('fs'),b=JSON.parse(fs.readFileSync('dist-standalone/build-info.json','utf8'));a.equal(b.commit,process.env.GITHUB_SHA);a.equal(b.version,require('./package.json').version);a(!fs.existsSync('dist-standalone/.data'));"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content -Raw -LiteralPath package.json | ConvertFrom-Json).version
+          $hash = Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256
+          "File=$($artifact.Name)" | Set-Content -LiteralPath release\BUILD-INFO.txt
+          "Version=$version" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "Commit=${{ github.sha }}" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "SHA256=$($hash.Hash)" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "Distribution=Single isolated portable Windows EXE." | Add-Content -LiteralPath release\BUILD-INFO.txt
+      - name: Upload verified build
+        uses: actions/upload-artifact@v4
+        with:
+          name: RSDW-Sync-Windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            app-next/release/RSDW-Sync-Super-Experimental-*-portable.exe
+            app-next/release/BUILD-INFO.txt
+      - name: Publish self-update prerelease
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: '& "$env:GITHUB_WORKSPACE\.github\scripts\publish-windows-release.ps1"'
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RSDW-Sync-Windows-Failure-${{ github.run_number }}
+          if-no-files-found: ignore
+          path: |
+            app-next/release/builder-debug.yml
+            app-next/release/builder-effective-config.yaml
+            app-next/.next/trace

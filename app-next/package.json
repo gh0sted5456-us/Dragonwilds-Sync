@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.7-super-experimental",
+  "version": "0.1.8-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",
@@ -40,6 +40,7 @@
     "test:startup": "node scripts/check-startup.js",
     "test:ui-flow": "node scripts/check-ui-flow.js",
     "test:windows": "node scripts/check-window-layout.js",
+    "test:release": "node scripts/check-release.js",
     "test:profile-refresh": "node scripts/check-profile-refresh.js",
     "test:lifecycle": "node scripts/check-lifecycle-guard.js",
     "test:saves": "node scripts/check-save-slots.js",
@@ -102,14 +103,6 @@
       "icon": "public/icon.ico",
       "signAndEditExecutable": false
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "installerIcon": "public/icon.ico",
-      "uninstallerIcon": "public/icon.ico",
-      "installerHeaderIcon": "public/icon.ico"
-    },
     "portable": {
       "artifactName": "RSDW-Sync-Super-Experimental-${version}-portable.exe"
     },
@@ -131,7 +124,7 @@
     ]
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=24"
   },
   "allowScripts": {
     "electron@37.10.3": true

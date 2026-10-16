@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const ini = require("@/lib/ini");
 const active = require("@/lib/active-server-profile");
-const { GROUPS } = require("@/lib/palfields");
+const { GROUPS } = require("@/lib/server-fields");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";

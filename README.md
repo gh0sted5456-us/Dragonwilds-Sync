@@ -25,8 +25,10 @@ The executable is written to `app-next/release/`. `build.bat` runs the same buil
 
 ## Release and services
 
-- `main` is the single current source and build branch. The Next workflow publishes a prerelease portable EXE; the in-app updater follows that branch and asset.
+- `main` is the single current source and build branch. The Windows release workflow runs every regression check and publishes the verified portable EXE under `v<package version>`; the in-app updater follows that branch and asset. Existing tags are never silently moved.
 - `cloudflare/world-directory` is the separate optional public World directory service. It does not build a second desktop launcher.
-- Historical tags and releases are retained for recovery; they are not current builds.
+- Obsolete public releases and tags are retired. Source changes remain in Git history; local recovery bundles are not part of the published repository.
 
 Do not use root-level build instructions or binaries from older 3.x/4.x releases for this app.
+
+See [contributing and release guidance](CONTRIBUTING.md), the [current changelog](app-next/CHANGELOG.md), and [data/network behavior](app-next/PRIVACY.md). License files and third-party notices are preserved.

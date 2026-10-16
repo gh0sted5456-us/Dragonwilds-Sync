@@ -25,6 +25,10 @@ app-next/dist-standalone/
 app-next/.data/
 app-next/Obietek-DragonWilds-Setup/
 app-next/preview/
+app-next/.rsdw-*/
+app-next/.env
+app-next/.env.*
+!app-next/.env.example
 
 # Cloudflare local state and development secrets
 .wrangler/

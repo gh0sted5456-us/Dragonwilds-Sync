@@ -43,7 +43,13 @@ npm run dev
 
 ## Verification
 
-Run the contract checks that cover profiles, settings, file delivery, admission, save slots, lifecycle, and updating:
+Run all isolated regression checks, including repository/release consistency:
+
+```powershell
+npm run test:release
+```
+
+Individual contract checks cover profiles, settings, file delivery, admission, save slots, lifecycle, and updating:
 
 ```powershell
 npm run test:contract

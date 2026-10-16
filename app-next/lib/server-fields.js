@@ -1,4 +1,4 @@
-// lib/palfields.js
+// Supported Dragonwilds dedicated-server settings.
 // Minimal DedicatedServer settings for Dragonwilds.
 // Network/auth keys are managed by the app.
 // type: bool | int | float | text | select | tuple

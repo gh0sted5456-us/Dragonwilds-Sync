@@ -1,61 +1,23 @@
-# Privacy Policy
+# RSDW Sync data and network behavior
 
-_Last updated: 8 July 2026_
+Updated: 2026-10-15
 
-RSDW Sync ("the app") is a desktop application you install and run on
-your own computer to manage Runescape Dragonwilds dedicated servers. Your privacy is simple to
-explain because the app is designed to keep your data on your machine.
+RSDW Sync stores launcher profiles, world/server settings, selected files, saves, logs, and preferences on the user's computer. Local records may contain server passwords, endpoints, provider API keys, and linked profile information. Protect the application's user-data folder and backups as you would other credentials. Removing a downloaded EXE does not delete those records or your game files.
 
-## What the app collects
+## Connections
 
-**Nothing is collected by the developer.** The app has no analytics, no telemetry,
-no accounts, and no "phone home" behaviour. The developer does not receive, store, or
-have access to any of your data.
+- GitHub is contacted for launcher and component update checks, including automatic checks while the app is open, and for requested downloads.
+- Steam/SteamCMD and supported game-provider endpoints are used for installation and version checks.
+- Connected RSDW hosts exchange manifests, required files, hashes, and approval requests. Saved connections are checked periodically while the app is open.
+- Cloud sync downloads files from the configured Google Drive, OneDrive, Dropbox, or HTTPS provider. Hybrid delivery can fall back to the RSDW host. Links hidden in the interface are not secret from the user's network tools or cloud provider.
+- Optional Google Drive/OneDrive publishing sends the selected files and manifest to the manager's chosen folder. Managers supply their own OAuth client IDs and approve access/sharing. Cloud refresh credentials are stored with Electron's OS-backed safeStorage; public-read sharing is a separate explicit choice.
+- Community/mod pages can query Nexus Mods, CurseForge, Discord, and project pages. The optional mod browser retains its provider session in the app's local user-data directory.
+- Server connection diagnostics can contact an external public-IP lookup service. Optional directory publication, webhooks, and sharing send the information selected for those features to their configured destination.
 
-## Data stored on your computer
+Providers and remote hosts can observe the usual connection data, including IP addresses and requested resources. Do not publish passwords, private saves, or other sensitive files in a public cloud folder or manifest.
 
-All data the app uses stays in local files on your own machine:
+## Local controls
 
-- Your list of worlds and their settings (a local database in your user-data folder).
-- Each server's own game files, saves, and configuration, which remain in that
-  server's install folder.
-- App preferences such as theme and backup retention.
+LAN advertising and remote administration are opt-in. The launcher does not change firewall rules. Cloud publishing and automatic publishing require their own setup choices. Save-cleaning tools work on reviewed copies/backups; inspect their previews before approving changes.
 
-You can delete this data at any time by removing the app's user-data folder and your
-server install folders.
-
-## Network connections the app makes
-
-The app only contacts external services to perform the tasks you ask of it:
-
-- **Valve / Steam (SteamCMD and Steam's public info API):** to download or update
-  the dedicated server and to check the latest available build version. This is
-  governed by Valve's own privacy policy.
-- **Your game server's local REST API:** used on your own computer / network to
-  read status and manage players. This traffic does not leave your network.
-- **Discord (optional):** only if you choose to configure a Discord webhook. When
-  enabled, the app sends server-event notifications (for example "server started") to
-  the Discord channel you selected. This data goes directly to Discord, to a webhook
-  you control; it is not sent to the developer. See Discord's privacy policy for how
-  Discord handles it. Leaving the webhook field empty disables this entirely.
-
-The app makes no other outbound connections.
-
-## Third-party services
-
-Any data sent to Steam or Discord is handled under those companies' respective privacy
-policies. The app does not share your data with any other third party.
-
-## Children's privacy
-
-The app does not knowingly collect any personal information from anyone, including
-children.
-
-## Changes to this policy
-
-If this policy changes, the updated version will be published in this repository with a
-new "last updated" date.
-
-## Contact
-
-Questions about this policy can be sent to: prakashmandal.iv@gmail.com
+For data-handling questions or corrections, open an issue at https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues without attaching passwords, tokens, private saves, or unredacted logs.

@@ -118,7 +118,7 @@ function contains(rel, needle, message) {
   assert(!fs.existsSync(path.join(root, "app/info/page.jsx")), "unfinished Helpy surface must stay removed");
   const splashShell = read("components/Shell.jsx");
   assert(splashShell.includes("const [visible, setVisible] = useState(true)") && !splashShell.includes("rsdw-splash-entered"), "manual launches must remain on the splash until Enter");
-  contains("app/globals.css", "--accent: #b8a1ef");
+  contains("app/globals.css", "--accent: #c7a45b");
   contains("app/globals.css", ':root[data-rsdw-theme="gilded"]');
   const modsPanel = contains("components/ModsPanel.jsx", "Managed mods");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
@@ -134,16 +134,16 @@ function contains(rel, needle, message) {
   contains("lib/component-updates.js", "latestNexusVersions");
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");
-  contains("lib/runtime-packages.js", 'const COMPONENTS = new Set(["ue4ss-server", "ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
-  contains("lib/runtime-packages.js", 'component === "ue4ss-server" && filename === "dwmapi.dll"');
-  contains("lib/runtime-packages.js", 'component !== "ue4ss-server" && filename === "version.dll"');
-  contains("lib/runtime-packages.js", 'Dedicated-server UE4SS requires version.dll');
-  contains("lib/runtime-packages.js", 'Steam UE4SS requires dwmapi.dll');
-  contains("lib/runtime-packages.js", "function materializeHost(worldId)");
+  contains("lib/runtime-files.js", 'const COMPONENTS = new Set(["ue4ss-server", "ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
+  contains("lib/runtime-files.js", 'component === "ue4ss-server" && filename === "dwmapi.dll"');
+  contains("lib/runtime-files.js", 'component !== "ue4ss-server" && filename === "version.dll"');
+  contains("lib/runtime-files.js", 'Dedicated-server UE4SS requires version.dll');
+  contains("lib/runtime-files.js", 'Steam UE4SS requires dwmapi.dll');
+  contains("lib/runtime-packages.js", "function materializeHost(worldId");
   contains("lib/supervisor.js", 'require("./runtime-packages").materializeHost(worldId)');
-  contains("lib/runtime-packages.js", 'component === "ue4ss-gamepass" ? "WinGDK" : "Win64"');
+  contains("lib/runtime-files.js", 'component === "ue4ss-gamepass" ? "WinGDK" : "Win64"');
   contains("lib/runtime-packages.js", 'clientEligible');
-  contains("lib/runtime-packages.js", "await new Promise((resolve) => setImmediate(resolve))");
+  contains("lib/runtime-files.js", "await new Promise((resolve) => setImmediate(resolve))");
   contains("app/api/worlds/[id]/runtime/route.js", 'type: "runtime"');
   contains("app/api/profiles/[id]/sync/route.js", 'type: "sync"');
   contains("lib/sync/client.js", "saveProfileSnapshot");
@@ -236,7 +236,7 @@ function contains(rel, needle, message) {
   assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-mark.png")), "Dragonwilds mark missing");
   assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-wordmark.png")), "Dragonwilds wordmark missing");
   assert(JSON.parse(read("package.json")).build.compression !== "store", "portable build must compress the Electron runtime");
-  contains("app/globals.css", "--radius: 12px");
+  contains("app/globals.css", "--radius: 9px");
 }
 
 // World replacement must use Dragonwilds' flat SaveGames layout without erasing

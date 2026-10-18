@@ -1,10 +1,9 @@
-import { NextResponse } from "next/server";
-const jobs = require("@/lib/jobs");
+const { jobsResponse } = require("@/lib/jobs-response");
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Downloads tray polls this for all active + recently-finished install/update jobs.
-export async function GET() {
-  return NextResponse.json({ ok: true, jobs: jobs.listJobs() });
+export async function GET(req) {
+  return jobsResponse(req);
 }

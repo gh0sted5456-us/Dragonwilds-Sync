@@ -35,7 +35,7 @@ for (const theme of ["dark", "gilded", "amethyst", "ember", "frost"]) {
 assert.deepEqual(windowPalette("__proto__"), windowPalette("dark"));
 assert.deepEqual(windowPalette({ color: "unsafe" }), windowPalette("dark"));
 const palette = windowPalette("dark"); palette.color = "unsafe";
-assert.equal(windowPalette("dark").color, "#11151d", "palette results must not mutate the allow-list");
+assert.equal(windowPalette("dark").color, "#050505", "palette results must not mutate the allow-list");
 
 const shell = read("components/Shell.jsx");
 assert(shell.includes('aria-label="Workspace navigation"') && shell.includes('className="skip-link"'));

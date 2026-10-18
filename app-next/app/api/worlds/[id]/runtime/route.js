@@ -27,18 +27,25 @@ export async function POST(req, { params }) {
   const body = await req.json().catch(() => ({}));
   try {
     const kind = String(body.component || "").toLowerCase();
+    const action = body.action || "install";
+    if (!["install", "preview-clean", "clean", "restore-clean"].includes(action)) throw new Error("Unknown loader action.");
+    if (action !== "install" && !ra.requireAdmin(req)) return NextResponse.json({ ok: false, error: "Administrator access required for runtime cleanup." }, { status: 403 });
+    if (action === "preview-clean") return NextResponse.json({ ok: true, preview: await runtimes.cleanupPreview(params.id, kind) });
     const label = kind === "ue4ss-gamepass" ? "UE4SS · PC Game Pass" : kind === "ue4ss-steam" ? "UE4SS · Steam" : kind === "ue4ss-server" ? "UE4SS · Dedicated Server" : "RuneSchema";
     const active = jobs.listJobs().find((job) => job.status === "running" && job.worldId === params.id && job.worldName === `${w.display_name} · ${label}`);
     if (active) return NextResponse.json({ ok: true, jobId: active.id, alreadyRunning: true });
     const jobId = jobs.createJob({ type: "runtime", worldId: params.id, worldName: `${w.display_name} · ${label}` });
     setImmediate(async () => {
       try {
-        await runtimes.install(params.id, kind, body.zipPath, ({ phase, percent, message, line }) => {
+        const progress = ({ phase, percent, message, line }) => {
           jobs.setPhase(jobId, phase, message);
           jobs.setProgress(jobId, percent, message);
           if (line) jobs.logJob(jobId, line);
-        });
-        dbm.logEvent(params.id, "mods", `Installed managed ${label} runtime package for host + client Sync`);
+        };
+        if (action === "clean") await runtimes.clean(params.id, kind, body.fingerprint, progress);
+        else if (action === "restore-clean") await runtimes.restoreClean(params.id, kind, body.recoveryId, progress);
+        else await runtimes.install(params.id, kind, body.zipPath, progress);
+        dbm.logEvent(params.id, "mods", action === "clean" ? "Cleaned runtime outside Mods: " + label : action === "restore-clean" ? "Restored runtime cleanup: " + label : `Installed managed ${label} runtime package for host + client Sync`);
         jobs.finishJob(jobId, true, { worldId: params.id });
       } catch (error) {
         jobs.logJob(jobId, `ERROR: ${error.message}`);

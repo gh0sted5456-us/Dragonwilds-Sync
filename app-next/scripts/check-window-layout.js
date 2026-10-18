@@ -43,6 +43,7 @@ assert(!ini.includes("minHeight: 360"), "history previews must fit short windows
 const mod = read("components/ModCodeEditor.jsx");
 assert(mod.includes('label="Unsaved mod changes"') && mod.includes("plain text fallback"));
 assert(mod.includes("readOnly: saving || (running && !file.hotload)"));
-assert(read("components/PlayerWorldLibrary.jsx").includes("</div>, document.body)"), "the viewport-positioned World menu must also escape the content container");
+assert(read("components/WorldActionsMenu.jsx").includes("</div>, document.body)"), "the viewport-positioned World/Server menu must escape the content container");
+assert(read("components/PlayerWorldLibrary.jsx").includes("<WorldActionsMenu") && read("components/HostLibrary.jsx").includes("<WorldActionsMenu"), "both libraries must use the shared bounded context menu");
 assert(read("electron/main.js").includes("resizable: true") && read("electron/main.js").includes("thickFrame: true"));
 console.log("Window layout: portaled dialogs, native titlebar inset, bounded editors, nested focus/Escape, unsaved guards and responsive history: OK");

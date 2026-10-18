@@ -21,7 +21,17 @@ const nextDistDir = process.env.RSDW_NEXT_DIST_DIR || ".next";
 const standalone = path.join(root, nextDistDir, "standalone");
 const out = path.join(root, "dist-standalone");
 
-function rmrf(p) { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); }
+function rmrf(p) {
+  const target = path.resolve(p);
+  const generatedRoot = path.resolve(out);
+  if (target !== generatedRoot && !target.startsWith(`${generatedRoot}${path.sep}`)) {
+    throw new Error(`Refusing to remove a path outside generated standalone output: ${target}`);
+  }
+  if (fs.existsSync(target)) {
+    if (fs.lstatSync(target).isSymbolicLink()) throw new Error(`Refusing linked build output: ${target}`);
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+}
 function copyDir(src, dst) {
   if (!fs.existsSync(src)) return;
   fs.mkdirSync(dst, { recursive: true });
@@ -62,8 +72,8 @@ copyDir(path.join(root, nextDistDir, "static"), path.join(out, nextDistDir, "sta
 // 3. copy public/ (icons etc.)
 copyDir(path.join(root, "public"), path.join(out, "public"));
 
-// Record the exact source branch/commit inside the packaged runtime. Update checks
-// compare this marker with main, the only current source branch.
+// Record the source branch/base commit and whether local changes were included.
+// Update checks compare this marker with main, the only current source branch.
 const gitValue = (...args) => {
   try { return execFileSync("git", args, { cwd: path.resolve(root, ".."), encoding: "utf8", windowsHide: true }).trim(); }
   catch { return ""; }
@@ -73,11 +83,12 @@ const buildInfo = {
   version: packageVersion,
   commit: gitValue("rev-parse", "HEAD") || null,
   branch: gitValue("branch", "--show-current") || "main",
+  sourceDirty: Boolean(gitValue("status", "--porcelain", "--untracked-files=normal")),
   nextDistDir,
   builtAt: new Date().toISOString(),
 };
 fs.writeFileSync(path.join(out, "build-info.json"), JSON.stringify(buildInfo, null, 2));
-console.log(`Build channel: ${buildInfo.branch} @ ${(buildInfo.commit || "unknown").slice(0, 8)}`);
+console.log(`Build channel: ${buildInfo.branch} @ ${(buildInfo.commit || "unknown").slice(0, 8)}${buildInfo.sourceDirty ? " + local changes" : ""}`);
 
 // 4. GUARANTEE the pure-WASM SQLite backend (including its .wasm binary) is present.
 //    Next's tracer can miss the runtime-loaded .wasm file, so copy the package whole.

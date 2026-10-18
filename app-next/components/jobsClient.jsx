@@ -26,12 +26,13 @@ let sharedJobs = EMPTY_JOBS;
 let sharedSignature = "[]";
 let pollTimer = null;
 let pollInFlight = null;
+let pollAbort = null;
+let jobsEtag = null;
 const listeners = new Set();
 
 function getJobsSnapshot() { return sharedJobs; }
 function getEmptySnapshot() { return EMPTY_JOBS; }
-function emitJobs(next) {
-  const signature = JSON.stringify(next);
+function emitJobs(next, signature = JSON.stringify(next)) {
   if (signature === sharedSignature) return;
   sharedSignature = signature;
   sharedJobs = next;
@@ -39,11 +40,23 @@ function emitJobs(next) {
 }
 async function pollJobs() {
   if (pollInFlight) return pollInFlight;
-  pollInFlight = fetch("/api/jobs", { cache: "no-store" })
-    .then((response) => response.json())
-    .then((result) => { if (result.ok) emitJobs(result.jobs || EMPTY_JOBS); })
+  const abort = new AbortController();
+  pollAbort = abort;
+  const timeout = setTimeout(() => abort.abort(), 10000);
+  pollInFlight = fetch("/api/jobs", { cache: "no-store", signal: abort.signal, headers: jobsEtag ? { "If-None-Match": jobsEtag } : {} })
+    .then(async (response) => {
+      if (abort.signal.aborted || response.status === 304) return;
+      if (!response.ok) {
+        if ([401, 403].includes(response.status)) { jobsEtag = null; emitJobs(EMPTY_JOBS); }
+        return;
+      }
+      const result = await response.json();
+      if (!result.ok || abort.signal.aborted) return;
+      jobsEtag = response.headers.get("etag") || null;
+      emitJobs(result.jobs || EMPTY_JOBS, jobsEtag || undefined);
+    })
     .catch(() => {})
-    .finally(() => { pollInFlight = null; });
+    .finally(() => { clearTimeout(timeout); pollInFlight = null; if (pollAbort === abort) pollAbort = null; });
   return pollInFlight;
 }
 function pollDelay() {
@@ -72,6 +85,7 @@ function subscribeJobs(listener) {
   return () => {
     listeners.delete(listener);
     if (!listeners.size) {
+      pollAbort?.abort();
       clearTimeout(pollTimer);
       pollTimer = null;
       window.removeEventListener("rsdw-jobs-ping", requestJobsRefresh);

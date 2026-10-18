@@ -4,6 +4,7 @@ import { api, Icon, toast } from "@/components/ui";
 import { useJobsPoll, JobCard } from "@/components/jobsClient";
 import ApplicationToolsBack from "@/components/ApplicationToolsBack";
 import { PageHeader, SegmentedMenu } from "@/components/PageChrome";
+import RuntimeLanePanel from "@/components/RuntimeLanePanel";
 
 export default function ApplicationSetupPage() {
   const [tab, setTab] = useState("server");
@@ -147,6 +148,7 @@ function ServerSetup() {
       SteamCMD: {state?.steamcmdInstalled ? state.steamcmdPath : "will be downloaded automatically"}
     </p>
   </div>
+  <RuntimeLanePanel platform="server" installDir={state?.installDir} />
   {setupJob && <div className="panel" style={{ padding: "1rem" }}>
     <div className="heading" style={{ marginBottom: 8 }}>SteamCMD output</div>
     <JobCard job={setupJob} defaultShowLog logHeight={360} />
@@ -191,7 +193,7 @@ function PlaySetup() {
   </div>;
 }
 
-function PlayLane({ label, ready, value, onChange, onBrowse, onSave }) {
+function PlayLane({ label, platform, ready, value, onChange, onBrowse, onSave }) {
   return <div className="panel" style={{ padding: "1.2rem" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <h2 className="heading" style={{ margin: 0, fontSize: "1.05rem" }}>{label} lane</h2>
@@ -205,6 +207,7 @@ function PlayLane({ label, ready, value, onChange, onBrowse, onSave }) {
       <button className="btn btn-ghost" onClick={onBrowse}><Icon name="folder" /> Browse</button>
       <button className="btn btn-primary" onClick={onSave}>Save Lane</button>
     </div>
+    {platform !== "epic" && <RuntimeLanePanel platform={platform} installDir={ready ? value : null} />}
   </div>;
 }
 

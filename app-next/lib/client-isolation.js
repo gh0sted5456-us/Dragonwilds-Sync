@@ -5,6 +5,7 @@ const { spawnSync } = require("child_process");
 const dbm = require("./db");
 const steamlib = require("./steamlibrary");
 const { P } = require("./paths");
+const { renameWithRetry } = require("./sync/fs-retry");
 const verifiedHashCache = new Map();
 
 function normalizedInstall(input) {
@@ -43,7 +44,7 @@ function managedTargets(service, install) {
   let manifest = null;
   try { if (snapshot) manifest = JSON.parse(fs.readFileSync(path.join(snapshot, "manifest.json"), "utf8")); } catch {}
   const expected = new Map((manifest?.units || []).flatMap((unit) => unit.files || []).map((item) => [String(item.target).toLowerCase(), item.sha256]));
-  const managed = new Set();
+  const managed = require("./runtime-lanes").ownedTargets(install, service, fileHashSync);
   for (const entry of ledger?.files || []) {
     const relative = String(entry).replace(/\\/g, "/");
     try {
@@ -460,7 +461,7 @@ async function ensureLocalProfileSnapshot(profileId) {
       if (fs.readdirSync(snapshot).length) throw new Error("This World already has profile-owned files. Review them before creating a new fork.");
       await fs.promises.rmdir(snapshot);
     }
-    await fs.promises.rename(candidate, snapshot);
+    await renameWithRetry(candidate, snapshot);
     return { snapshot, created: true, fileCount: files.length };
   } catch (error) {
     await fs.promises.rm(candidate, { recursive: true, force: true }).catch(() => {});

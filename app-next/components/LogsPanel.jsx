@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui";
 import { ProgressBar, useJobsPoll } from "@/components/jobsClient";
+import NativeLogPanel from "@/components/NativeLogPanel";
 
 export default function LogsPanel({ worldId }) {
   const { t } = useTranslation();
   const [lines, setLines] = useState([]);
   const [live, setLive] = useState(true);
   const [channel, setChannel] = useState("server");
+  const fileChannel = ["native", "ue4ss", "eos"].includes(channel);
   const boxRef = useRef(null);
   const esRef = useRef(null);
   const jobs = useJobsPoll();
@@ -41,9 +43,10 @@ export default function LogsPanel({ worldId }) {
   return (
     <div>
       <div className="panel" style={{ padding: 4, display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-        {[["server", "Server"], ["steamcmd", "SteamCMD"], ["rsdw", "RSDW files"], ["all", "Full update log"]].map(([value, label]) =>
+        {[["server", "Server"], ["native", "Game log"], ["ue4ss", "UE4SS"], ["eos", "EOS"], ["steamcmd", "SteamCMD"], ["rsdw", "RSDW files"], ["all", "Full update log"]].map(([value, label]) =>
           <button key={value} className={`btn ${channel === value ? "btn-primary" : "btn-subtle"}`} onClick={() => setChannel(value)}>{label}</button>)}
       </div>
+      {fileChannel ? <NativeLogPanel kind="server" id={worldId} channel={channel} /> : <>
       {channel !== "server" && maintenance && <div className="panel-inset" style={{ padding: ".55rem .75rem", marginBottom: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".76rem" }}><span>{maintenance.message || "Preparing update…"}</span><strong>{maintenance.percent == null ? "" : `${maintenance.percent}%`}</strong></div>
         {maintenance.status === "running" && <ProgressBar percent={maintenance.percent} style={{ marginTop: 6 }} />}
@@ -63,6 +66,7 @@ export default function LogsPanel({ worldId }) {
           ? <div className="ln subtle">{t("logs.waiting")}</div>
           : lines.map((l, i) => <div key={i} className="ln">{l}</div>)}
       </div>
+      </>}
     </div>
   );
 }

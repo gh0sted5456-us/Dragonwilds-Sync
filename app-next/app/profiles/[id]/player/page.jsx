@@ -7,6 +7,7 @@ import ProfileSavesPanel from "@/components/ProfileSavesPanel";
 import ClientSyncJourney from "@/components/ClientSyncJourney";
 import ClientSafeStoragePanel from "@/components/ClientSafeStoragePanel";
 import AppOverlay from "@/components/AppOverlay";
+import NativeLogPanel from "@/components/NativeLogPanel";
 import { useJobsPoll } from "@/components/jobsClient";
 const { deliveryInfo } = require("@/lib/sync-progress");
 
@@ -22,6 +23,7 @@ function PlayerProfileWorkspace({ params }) {
   const [loadError, setLoadError] = useState("");
   const [loadAttempts, setLoadAttempts] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(null);
+  const [logsOpen, setLogsOpen] = useState(false);
   const [playLanes, setPlayLanes] = useState({ steam: null, epic: null, gamepass: null });
   const [locations, setLocations] = useState({ installDir: "", executablePath: "", savePath: "" });
   const [checking, setChecking] = useState(false);
@@ -262,6 +264,10 @@ function PlayerProfileWorkspace({ params }) {
       </div>
     </div>
     <p className="subtle">{profile.connection?.localWorld ? "This local World profile activates its assigned save and profile-owned files before opening Dragonwilds." : "Connect to authenticate and compare this World's declared files. Once synchronized, Join opens Dragonwilds through your selected platform."}</p>
+    <details className="panel world-launch-details" open={logsOpen} onToggle={(event) => setLogsOpen(event.currentTarget.open)}>
+      <summary>Native game, UE4SS &amp; EOS logs</summary>
+      {logsOpen && <div style={{ paddingTop: 14 }}><NativeLogPanel kind="player" id={params.id} /></div>}
+    </details>
     {!profile.connection?.localWorld && <div className="panel sync-connection-panel" style={{ borderColor: launchReady ? "var(--accent)" : "var(--line-strong)" }}>
       <div className="sync-section-heading"><div><span className="eyebrow">VERIFIED FILE SYNC</span><h2>This World's files, ready to play.</h2></div><span className="subtle">Check → sync → enter</span></div>
       <ClientSyncJourney stage={flowStage} job={syncJob} message={flowStep} error={flowError} skipDownload={skipDownload} transport={transport} share={playerShare} />

@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.8-super-experimental",
+  "version": "0.1.12-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",
@@ -26,6 +26,8 @@
     "test:server-migration": "node scripts/check-server-migration.js",
     "test:client-isolation": "node scripts/check-client-isolation.js",
     "test:component-updates": "node scripts/check-component-update-lanes.js",
+    "test:runtime-zips": "node scripts/check-runtime-zip-updates.js",
+    "test:runtime-clean": "node scripts/check-runtime-clean.js",
     "test:client-service": "node scripts/check-client-service.js",
     "test:socials": "node scripts/check-social-mods.js",
     "test:discord": "node scripts/check-discord-community.js",
@@ -40,6 +42,10 @@
     "test:startup": "node scripts/check-startup.js",
     "test:ui-flow": "node scripts/check-ui-flow.js",
     "test:windows": "node scripts/check-window-layout.js",
+    "test:log-export": "node scripts/check-log-export.js",
+    "test:desktop-package": "node scripts/check-desktop-package.js",
+    "test:jobs-polling": "node scripts/check-jobs-polling.js",
+    "test:appearance": "node scripts/check-appearance.js",
     "test:release": "node scripts/check-release.js",
     "test:profile-refresh": "node scripts/check-profile-refresh.js",
     "test:lifecycle": "node scripts/check-lifecycle-guard.js",
@@ -80,7 +86,8 @@
     "productName": "RSDW Sync Experimental",
     "files": [
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules{,/**/*}"
     ],
     "extraResources": [
       {

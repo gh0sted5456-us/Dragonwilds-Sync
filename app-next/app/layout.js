@@ -22,7 +22,7 @@ export default function RootLayout({ children }) {
         {/* Set theme before paint to avoid flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var t='dark';try{t=localStorage.getItem('rsdw-theme')||'dark';}catch(e){}if(['dark','gilded','amethyst','ember','frost'].indexOf(t)<0)t='dark';document.documentElement.classList.add('dark');document.documentElement.dataset.rsdwTheme=t;if(window.desktop?.nativeSplash)document.documentElement.dataset.rsdwNativeSplash='true';})();`,
+            __html: `(function(){var t='dark';try{t=localStorage.getItem('rsdw-theme')||'dark';var a=JSON.parse(localStorage.getItem('rsdw-appearance')||'null');if(a){if(typeof a.backgroundOpacity==='number'&&isFinite(a.backgroundOpacity))document.documentElement.style.setProperty('--workspace-background-opacity',Math.max(0,Math.min(.6,a.backgroundOpacity)));if(typeof a.surfaceOpacity==='number'&&isFinite(a.surfaceOpacity))document.documentElement.style.setProperty('--surface-opacity',Math.max(.72,Math.min(1,a.surfaceOpacity)));}}catch(e){}if(['dark','gilded','amethyst','ember','frost'].indexOf(t)<0)t='dark';document.documentElement.classList.add('dark');document.documentElement.dataset.rsdwTheme=t;if(window.desktop?.nativeSplash)document.documentElement.dataset.rsdwNativeSplash='true';})();`,
           }}
         />
       </head>

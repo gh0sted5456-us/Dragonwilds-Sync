@@ -1,20 +1,25 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, StatusChip, fmtUptime, fmtTime, toast } from "@/components/ui";
-import LogsPanel from "@/components/LogsPanel";
-import CustomizeModal from "@/components/CustomizeModal";
-import SettingsEditor from "@/components/SettingsEditor";
-import BackupsPanel from "@/components/BackupsPanel";
-import SchedulePanel from "@/components/SchedulePanel";
-import ModsPanel from "@/components/ModsPanel";
 import PrereqsNotice from "@/components/PrereqsNotice";
-import AdminPanel from "@/components/AdminPanel";
 import TabPanelBoundary from "@/components/TabPanelBoundary";
 import AppOverlay from "@/components/AppOverlay";
 import useAdaptivePolling from "@/components/useAdaptivePolling";
+
+function LoadingSection() { return <div role="status" className="subtle" style={{ padding: "1rem" }}>Loading section…</div>; }
+// Load secondary tools only when opened; their existing tab boundaries still
+// unmount streams, requests and editors when the user moves to another section.
+const LogsPanel = dynamic(() => import("@/components/LogsPanel"), { loading: LoadingSection });
+const CustomizeModal = dynamic(() => import("@/components/CustomizeModal"), { loading: LoadingSection });
+const SettingsEditor = dynamic(() => import("@/components/SettingsEditor"), { loading: LoadingSection });
+const BackupsPanel = dynamic(() => import("@/components/BackupsPanel"), { loading: LoadingSection });
+const SchedulePanel = dynamic(() => import("@/components/SchedulePanel"), { loading: LoadingSection });
+const ModsPanel = dynamic(() => import("@/components/ModsPanel"), { loading: LoadingSection });
+const AdminPanel = dynamic(() => import("@/components/AdminPanel"), { loading: LoadingSection });
 
 const TABS = [
   { id: "overview", labelKey: "world.tab.overview", icon: "grid" },

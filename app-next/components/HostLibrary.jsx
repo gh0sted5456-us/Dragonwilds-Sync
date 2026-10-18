@@ -7,6 +7,8 @@ import CreateWorldModal from "@/components/CreateWorldModal";
 import useAdaptivePolling from "@/components/useAdaptivePolling";
 import LanDiscoveryPanel from "@/components/LanDiscoveryPanel";
 import { LayoutToggle, useLayoutPreference, RsdwBadge } from "@/components/LibraryChrome";
+import WorldActionsMenu from "@/components/WorldActionsMenu";
+import useLogExport from "@/components/useLogExport";
 const ACTION_TOAST = { start: "toast.worldStarted", stop: "toast.worldStopped", restart: "toast.worldRestarted" };
 
 export default function HostLibrary() {
@@ -19,6 +21,8 @@ export default function HostLibrary() {
   const [busy, setBusy] = useState({});
   const [checking, setChecking] = useState(false);
   const [activeServerId, setActiveServerId] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const { exportLogs, exporting } = useLogExport();
   const [serverLayout, setServerLayout] = useLayoutPreference("server");
   const serverModeRef = useRef(null);
 
@@ -124,8 +128,8 @@ export default function HostLibrary() {
         <div className={serverLayout === "placards" ? "rsdw-placard-grid" : "rsdw-row-list"}>
           {worlds.map((w) => (
             serverLayout === "placards"
-              ? <WorldPlacard key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
-              : <WorldRow key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
+              ? <WorldPlacard key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} onContext={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, world: w }); }} />
+              : <WorldRow key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} onContext={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, world: w }); }} />
           ))}
         </div>
       )}
@@ -143,16 +147,19 @@ export default function HostLibrary() {
         </section>
         <LanDiscoveryPanel />
       </>}
+      <WorldActionsMenu menu={contextMenu} label="Server actions" onClose={() => setContextMenu(null)} items={[
+        { label: "Export Logs", disabled: exporting, title: "Download this server profile's native game, UE4SS and EOS logs", onClick: () => exportLogs("server", contextMenu.world.world_id) },
+      ]} />
     </div>
   );
 }
 
-function WorldPlacard({ w, active, busy, onAction, onActivate }) {
+function WorldPlacard({ w, active, busy, onAction, onActivate, onContext }) {
   const { t } = useTranslation();
   const isBusy = !!busy;
   const accent = w.accent_color || "var(--yellow)";
   const banner = w.banner_data || `/rsdw/placards/${Math.abs(String(w.world_id).length % 9) + 1}.webp`;
-  return <article className="rsdw-placard" style={{ "--placard-accent": accent }}>
+  return <article className="rsdw-placard" onContextMenu={onContext} title="Right-click for Server actions" style={{ "--placard-accent": accent }}>
     <div className="rsdw-placard-mode">SERVER PROFILE · HOSTED WORLD</div>
     <div className="rsdw-placard-media"><img src={banner} alt="" /><div /></div>
     <div className="rsdw-placard-body">
@@ -172,12 +179,12 @@ function WorldPlacard({ w, active, busy, onAction, onActivate }) {
   </article>;
 }
 
-function WorldRow({ w, active, busy, onAction, onActivate }) {
+function WorldRow({ w, active, busy, onAction, onActivate, onContext }) {
   const { t } = useTranslation();
   const isBusy = !!busy;
   const accent = w.accent_color || "var(--accent)";
   return (
-    <div className="panel world-card animate-floatUp" style={{ position: "relative", padding: "1rem 1.1rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", overflow: "hidden", borderLeft: `3px solid ${accent}` }}>
+    <div className="panel world-card animate-floatUp" onContextMenu={onContext} title="Right-click for Server actions" style={{ position: "relative", padding: "1rem 1.1rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", overflow: "hidden", borderLeft: `3px solid ${accent}` }}>
       {!w.banner_data && <div aria-hidden style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg,var(--card) 20%,transparent),url('/rsdw/placards/${Math.abs(String(w.world_id).length % 9) + 1}.webp') center/cover`, opacity: .28 }} />}
       {/* banner: sits on the right, fades toward the center (|||| |  |) */}
       {w.banner_data && (

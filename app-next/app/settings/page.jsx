@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 import { PageHeader } from "@/components/PageChrome";
 import { APP_THEMES, useTheme } from "@/components/ThemeProvider";
+const AppearancePanel = dynamic(() => import("@/components/AppearancePanel"), { loading: () => <p role="status" className="subtle">Loading backgrounds…</p> });
 const { readSettingsSection, settingsSectionUrl } = require("@/lib/ui-navigation");
 const CATEGORY_GROUPS = [
   { id: "workspace", title: "Make it your workspace", description: "Setup, appearance, and desktop behavior." },
@@ -185,7 +187,7 @@ export default function SettingsPage() {
       </div>}
 
       {section === "appearance" && (
-      <div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
+      <><div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
         <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Workspace colors</h3>
         <label className="label">{t("settings.theme")}</label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(205px, 1fr))", gap: 10 }}>
@@ -196,7 +198,7 @@ export default function SettingsPage() {
             {theme === option.id && <Icon name="check" size={15} />}
           </button>)}
         </div>
-      </div>
+      </div><AppearancePanel /></>
       )}
 
       {section === "server" && (

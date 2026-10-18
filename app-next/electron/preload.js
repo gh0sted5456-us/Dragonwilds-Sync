@@ -1,5 +1,5 @@
 // electron/preload.js
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("desktop", {
   isElectron: true,
@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("desktop", {
   pickServerExecutable: () => ipcRenderer.invoke("pick-server-executable"),
   pickClientExecutable: () => ipcRenderer.invoke("pick-client-executable"),
   pickZip: () => ipcRenderer.invoke("pick-zip"),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
   pickWorldSave: () => ipcRenderer.invoke("pick-world-save"),
   getSystemTheme: () => ipcRenderer.invoke("get-theme"),
   setWindowTheme: (theme) => ipcRenderer.invoke("window-theme", theme),

@@ -701,7 +701,7 @@ function createWindow() {
     resizable: true,
     maximizable: true,
     thickFrame: true,
-    backgroundColor: "#202427",
+    backgroundColor: "#050505",
     title: "RuneScape: Dragonwilds - Sync Launcher",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     ...(process.platform === "win32" ? {

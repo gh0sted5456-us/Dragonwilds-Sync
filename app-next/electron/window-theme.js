@@ -1,6 +1,6 @@
 const palettes = Object.freeze({
-  dark: { color: "#11151d", symbolColor: "#f1f3fb" },
-  gilded: { color: "#11151d", symbolColor: "#f1f3fb" },
+  dark: { color: "#050505", symbolColor: "#c7a45b" },
+  gilded: { color: "#080705", symbolColor: "#d2b577" },
   amethyst: { color: "#171521", symbolColor: "#f5f0ff" },
   ember: { color: "#211916", symbolColor: "#fff4e8" },
   frost: { color: "#121d26", symbolColor: "#f1f8fb" },

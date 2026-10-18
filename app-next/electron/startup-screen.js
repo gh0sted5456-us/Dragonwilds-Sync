@@ -38,19 +38,19 @@ function startupHtml(publicDirectory, state = {}) {
   const rsdw = imageData(publicDirectory, "rsdw/app-icon.webp", "image/webp");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>RSDW Sync</title><style>
-  *{box-sizing:border-box}body{margin:0;color:#f1f3fb;background:#11151d;font:15px system-ui,"Segoe UI",sans-serif}
-  .caption{height:46px;padding:0 150px 0 18px;display:flex;align-items:center;border-bottom:1px solid #303b4e;background:#11151d;font-size:13px;font-weight:700;-webkit-app-region:drag}
-  main{height:calc(100vh - 46px);min-height:360px;display:grid;grid-template-rows:minmax(180px,1fr) auto;justify-items:center;padding:24px 24px 40px;background:radial-gradient(circle at 50% 44%,#252435 0%,#11151d 58%)}
+  *{box-sizing:border-box}body{margin:0;color:#f3eedf;background:#050505;font:15px system-ui,"Segoe UI",sans-serif}
+  .caption{height:46px;padding:0 150px 0 18px;display:flex;align-items:center;border-bottom:1px solid #27251e;background:#050505;font-size:13px;font-weight:700;-webkit-app-region:drag}
+  main{height:calc(100vh - 46px);min-height:360px;display:grid;grid-template-rows:minmax(180px,1fr) auto;justify-items:center;padding:24px 24px 40px;background:radial-gradient(circle at 50% 44%,#211b0f 0%,#050505 65%)}
   .logos{position:relative;align-self:center;width:min(72vw,620px);height:min(48vh,350px);display:grid;place-items:center}
   .logos img{position:absolute;max-width:100%;max-height:100%;object-fit:contain}
   .dragonwilds{width:620px;opacity:0;animation:dragonwilds 2.8s ease-in-out both}
   .rsdw{width:300px;opacity:1;animation:rsdw 2.8s ease-in-out both}
-  .fallback{font-size:32px;font-weight:800;color:#c1a56d}
+  .fallback{font-size:32px;font-weight:800;color:#c7a45b}
   .entry{width:min(100%,720px);display:grid;justify-items:center;gap:12px;text-align:center}
-  .label{color:#aaa397;font-size:11px;font-weight:800;letter-spacing:.2em}
-  button{min-width:158px;border:1px solid #c1a56d;border-radius:999px;padding:12px 28px;background:#24282c;color:#f3efe7;font:800 14px system-ui;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
-  button:disabled{cursor:wait;color:#c7c1b7;border-color:#766746}button:not(:disabled):hover,button:focus-visible{background:#c1a56d;color:#1d1a14;outline:2px solid #d0b47a;outline-offset:3px}
-  #status{margin:0;color:#aaa397;font-size:13px}#error{margin:0;color:#e3a66f;font-size:13px;overflow-wrap:anywhere}small{color:#aaa397;font-size:12px}
+  .label{color:#b0a58d;font-size:11px;font-weight:800;letter-spacing:.2em}
+  button{min-width:158px;border:1px solid #c7a45b;border-radius:999px;padding:12px 28px;background:#121210;color:#f3eedf;font:800 14px system-ui;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+  button:disabled{cursor:wait;color:#b0a58d;border-color:#64502b}button:not(:disabled):hover,button:focus-visible{background:#c7a45b;color:#100d07;outline:2px solid #e5c982;outline-offset:3px}
+  #status{margin:0;color:#b0a58d;font-size:13px}#error{margin:0;color:#e3a66f;font-size:13px;overflow-wrap:anywhere}small{color:#b0a58d;font-size:12px}
   @keyframes dragonwilds{0%,26%{opacity:1;transform:scale(1)}80%,100%{opacity:0;transform:scale(1.025)}}
   @keyframes rsdw{0%,26%{opacity:0;transform:scale(.97)}80%,100%{opacity:1;transform:scale(1)}}
   @media(prefers-reduced-motion:reduce){.dragonwilds,.rsdw{animation:none}.dragonwilds{display:none}}

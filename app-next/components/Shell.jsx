@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { Icon, registerToast, toast } from "@/components/ui";
 import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
+import { WorkspaceBackdrop } from "@/components/ThemeProvider";
 const { workspaceTrail } = require("@/lib/ui-navigation");
 
 const NAV = [
@@ -150,6 +151,7 @@ export default function Shell({ children }) {
     <div className="desktop-shell">
       <a href="#workspace-main" className="skip-link">Skip to workspace</a>
       <SplashGate />
+      <WorkspaceBackdrop />
       <DesktopTitleBar />
       <div className="app-frame">
       <aside className="app-sidebar" data-collapsed={collapsed}>

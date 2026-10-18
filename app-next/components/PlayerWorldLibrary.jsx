@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { createPortal } from "react-dom";
 import { api, Icon, toast } from "@/components/ui";
 import LocalWorldScanner from "@/components/LocalWorldScanner";
 import { LayoutToggle, useLayoutPreference, RsdwBadge } from "@/components/LibraryChrome";
+import WorldActionsMenu from "@/components/WorldActionsMenu";
+import useLogExport from "@/components/useLogExport";
 
 export default function PlayerWorldLibrary() {
   const [profiles, setProfiles] = useState([]);
@@ -22,6 +23,7 @@ export default function PlayerWorldLibrary() {
   const [scanOpen, setScanOpen] = useState(false);
   const [localService, setLocalService] = useState("steam");
   const [contextMenu, setContextMenu] = useState(null);
+  const { exportLogs, exporting } = useLogExport();
   const [profileLayout, setProfileLayout] = useLayoutPreference("player");
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")).finally(() => setProfilesLoading(false)), []);
@@ -51,15 +53,6 @@ export default function PlayerWorldLibrary() {
     const timer = setInterval(heartbeat, 10 * 60 * 1000);
     return () => { stopped = true; clearInterval(timer); };
   }, [loadProfiles]);
-
-  useEffect(() => {
-    const close = () => setContextMenu(null);
-    const escape = (event) => { if (event.key === "Escape") close(); };
-    window.addEventListener("click", close);
-    window.addEventListener("blur", close);
-    window.addEventListener("keydown", escape);
-    return () => { window.removeEventListener("click", close); window.removeEventListener("blur", close); window.removeEventListener("keydown", escape); };
-  }, []);
 
   const sendProfileToDesktop = async (profile) => {
     try {
@@ -183,12 +176,10 @@ export default function PlayerWorldLibrary() {
         return profileLayout === "placards" ? <PlayerPlacard {...props} /> : <PlayerRow {...props} />;
       })}</div>}
 
-    {contextMenu && createPortal(<div className="panel world-context-menu" role="menu" aria-label="World actions" style={{ left: `clamp(8px, ${contextMenu.x}px, calc(100vw - 246px))`, top: `clamp(var(--app-titlebar-height, 0px), ${contextMenu.y}px, calc(100dvh - 64px))` }}>
-      <button className="btn btn-ghost" role="menuitem" style={{ width: "100%", justifyContent: "flex-start" }}
-        onClick={() => { const p = contextMenu.profile; setContextMenu(null); sendProfileToDesktop(p); }}>
-        <Icon name="download" size={16} /> Send to Desktop
-      </button>
-    </div>, document.body)}
+    <WorldActionsMenu menu={contextMenu} onClose={() => setContextMenu(null)} items={[
+      { label: "Send to Desktop", onClick: () => sendProfileToDesktop(contextMenu.profile) },
+      { label: "Export Logs", disabled: exporting, title: "Download this PC's native game, UE4SS and EOS logs", onClick: () => exportLogs("player", contextMenu.profile.profile_id) },
+    ]} />
   </div>;
 }
 

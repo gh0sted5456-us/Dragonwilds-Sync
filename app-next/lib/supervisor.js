@@ -182,6 +182,7 @@ function isAlive(worldId) {
 }
 
 async function startWorldUnlocked(worldId) {
+  if (require("./runtime-packages").isInstalling(worldId)) throw new Error("Wait for this World's loader ZIP update to finish before starting its server.");
   if (require("./jobs").listJobs().some((job) => job.status === "running" && job.phase === "copy")) {
     throw new Error("Wait for the private Server files copy to finish before starting a hosted Server.");
   }

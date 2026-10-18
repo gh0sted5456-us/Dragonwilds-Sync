@@ -5,6 +5,7 @@ import { api, Icon, toast } from "@/components/ui";
 import { useJobsPoll } from "@/components/jobsClient";
 import ModCodeEditor from "@/components/ModCodeEditor";
 import CloudStoragePanel from "@/components/CloudStoragePanel";
+import RuntimeCleanControls from "@/components/RuntimeCleanControls";
 
 const GROUPS = [
   ["runeschema", "RuneSchema mods"],
@@ -96,10 +97,10 @@ export default function ModsPanel({ worldId, running }) {
     } catch (error) { toast(error.message, "error"); }
   }
 
-  async function uploadRuntime(component) {
+  async function uploadRuntime(component, droppedZip = null) {
     if (!isElectron) return toast("Runtime ZIP selection is available in the desktop app.", "error");
     if (running) return toast("Stop the active server before replacing a runtime.", "error");
-    const zipPath = await window.desktop.pickZip();
+    const zipPath = droppedZip || await window.desktop.pickZip();
     if (!zipPath) return;
     setBusy(true);
     try {
@@ -228,12 +229,22 @@ export default function ModsPanel({ worldId, running }) {
       <section className="panel-inset" style={{ padding: "0.95rem 1rem" }}>
         <div className="heading" style={{ fontSize: "0.96rem" }}>World runtimes</div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "4px 0 10px" }}>
-          Each World profile owns its runtime packages. Dedicated-server UE4SS is separate from client UE4SS: the server uses version.dll, Steam uses dwmapi.dll, and Game Pass uses its WinGDK lane. Sync publishes only client-compatible files and verifies every download by hash.
+          Override the Server defaults with a profile-owned ZIP, or keep using the defaults from Application Setup. Drop an archive on its card or choose a ZIP. Updates remove retired loader-owned files while preserving mod lists and user mods. The server uses version.dll, Steam uses dwmapi.dll, and Game Pass uses its WinGDK lane. Sync publishes only client-compatible files.
         </p>
         <div className="runtime-package-grid">
           {RUNTIME_PACKAGES.map((pkg) => {
             const row = runtimePackages?.[pkg.stateKey] || {};
-            return <div key={pkg.component} className="panel" style={{ padding: "0.9rem 1rem" }}>
+            return <div key={pkg.component} className="panel" style={{ padding: "0.9rem 1rem" }} onDragOver={(event) => event.preventDefault()} onDrop={async (event) => {
+              event.preventDefault();
+              if (busy || running) return;
+              const dropped = Array.from(event.dataTransfer.files || []);
+              if (dropped.length !== 1 || !/\.zip$/i.test(dropped[0].name)) return toast("Drop one loader ZIP on its card.", "error");
+              try {
+                const zipPath = window.desktop?.getPathForFile?.(dropped[0]);
+                if (!zipPath) return toast("Select the ZIP in the desktop launcher.", "error");
+                await uploadRuntime(pkg.component, zipPath);
+              } catch (error) { toast(error.message, "error"); }
+            }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <img src={pkg.icon} alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -242,11 +253,13 @@ export default function ModsPanel({ worldId, running }) {
                     {row.installed ? `${row.archive} · ${row.clientFiles} client files` : pkg.note}
                   </div>
                 </div>
-                <span className="chip" style={{ background: row.installed ? "var(--green)" : "var(--line)" }}>{row.installed ? "MANAGED" : "OPTIONAL"}</span>
+                <span className="chip" style={{ background: row.installed ? "var(--green)" : "var(--line)" }}>{row.inherited ? "DEFAULT" : row.installed ? "MANAGED" : "OPTIONAL"}</span>
               </div>
               <button className="btn btn-ghost" style={{ marginTop: 10, width: "100%" }} disabled={busy || running} onClick={() => uploadRuntime(pkg.component)}>
                 <Icon name="upload" size={14} /> {row.installed ? `Replace ${pkg.label} ZIP` : `Upload ${pkg.label} ZIP`}
               </button>
+              {row.cleaned && <p className="subtle" role="status">{row.inherited ? "Shared default cleaned. This profile keeps its current files until a new default ZIP is installed." : "Runtime cleaned. Install its ZIP to refill it."}</p>}
+              <RuntimeCleanControls endpoint={"/api/worlds/" + worldId + "/runtime"} component={pkg.component} disabled={busy || running || jobs.some((job) => job.worldId === worldId && job.status === "running" && job.type === "runtime")} />
             </div>;
           })}
         </div>
